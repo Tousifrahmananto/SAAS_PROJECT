@@ -1,0 +1,21 @@
+.auth-switch {
+  text-align: center;
+}
+
+.auth-switch button {
+  border: 0;
+  background: transparent;
+  color: #1769db;
+  font-weight: 800;
+  padding: 0;
+}
+
+.auth-switch button:hover {
+  text-decoration: underline;
+}
+
+@media (min-width: 851px) {
+  .login-form:has(input[autocomplete="organization"]) {
+    padding-block: 36px;
+  }
+}

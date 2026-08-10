@@ -10,3 +10,11 @@ describe("health endpoint", () => {
     expect(response.headers["x-correlation-id"]).toBeTruthy();
   });
 });
+
+describe("registration endpoint", () => {
+  it("rejects an invalid registration payload before database access", async () => {
+    const response = await request(app).post("/api/auth/register").send({});
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
+});
