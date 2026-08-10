@@ -3,7 +3,7 @@ services:
     name: hospital-billing-api
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build --workspace server
+    buildCommand: npm ci --include=dev && npm run build --workspace server
     startCommand: npm start --workspace server
     healthCheckPath: /api/health
     envVars:
