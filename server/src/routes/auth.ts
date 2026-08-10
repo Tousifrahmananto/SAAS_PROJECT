@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import { rateLimit } from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { env } from "../config/env.js";
@@ -8,7 +9,16 @@ import { User } from "../models/User.js";
 
 export const authRouter = Router();
 
-authRouter.post("/login", async (req, res, next) => {
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: { code: "RATE_LIMITED", message: "Too many failed sign-in attempts. Try again later." } }
+});
+
+authRouter.post("/login", loginLimiter, async (req, res, next) => {
   try {
     const input = z.object({ email: z.email(), password: z.string().min(8).max(128) }).parse(req.body);
     const user = await User.findOne({ email: input.email.toLowerCase() }).select("+passwordHash");

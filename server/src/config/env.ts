@@ -4,10 +4,20 @@ import { z } from "zod";
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
-  MONGODB_URI: z.string().min(1).default("mongodb://127.0.0.1:27017/hospital_billing"),
+  MONGODB_URI: z.string().min(1).optional(),
   DNS_SERVERS: z.string().optional(),
-  JWT_SECRET: z.string().min(32).default("development-only-secret-change-me-now"),
+  JWT_SECRET: z.string().min(32).optional(),
   CLIENT_ORIGIN: z.string().url().default("http://localhost:5173")
 });
 
-export const env = schema.parse(process.env);
+const parsed = schema.parse(process.env);
+
+if (parsed.NODE_ENV === "production" && (!parsed.MONGODB_URI || !parsed.JWT_SECRET)) {
+  throw new Error("MONGODB_URI and JWT_SECRET are required in production");
+}
+
+export const env = {
+  ...parsed,
+  MONGODB_URI: parsed.MONGODB_URI ?? "mongodb://127.0.0.1:27017/hospital_billing",
+  JWT_SECRET: parsed.JWT_SECRET ?? "development-only-secret-change-me-now"
+};

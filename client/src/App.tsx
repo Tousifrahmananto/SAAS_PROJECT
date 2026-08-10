@@ -5,9 +5,11 @@ interface Session {
   user: { fullName: string; roles: string[] };
 }
 
+const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
 export function App() {
-  const [email, setEmail] = useState("opd@shurokkha.test");
-  const [password, setPassword] = useState("DemoPass123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,7 +19,7 @@ export function App() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password })
@@ -49,7 +51,7 @@ export function App() {
         <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" minLength={8} required /></label>
         {error && <div className="error" role="alert">{error}</div>}
         <button className="primary" disabled={busy}>{busy ? "Signing in…" : "Continue securely"}</button>
-        <small>Demo accounts are created by the server seed command.</small>
+        <small>Use the hospital account assigned by an administrator.</small>
       </form>
     </section>
   </main>;

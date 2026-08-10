@@ -29,6 +29,11 @@ deployed Atlas-backed environment.
 
 ### SEC-001 — Public, functional demo credentials
 
+**Remediation status (10 Aug 2026): Fixed in the working tree.** Password
+prefill/documentation were removed, the seed reads an ignored environment
+variable, and production seeding is blocked. Already seeded Atlas users still
+need their passwords rotated or their accounts removed.
+
 - **Rule ID:** REACT-CONFIG-001 / credential hygiene
 - **Severity:** High if the seeded account is available in a shared or deployed
   environment; Low if it is strictly local and disposable
@@ -55,6 +60,9 @@ deployed Atlas-backed environment.
 ## Medium severity
 
 ### SEC-002 — Predictable JWT signing fallback can reach production
+
+**Remediation status (10 Aug 2026): Fixed in the working tree.** Production now
+refuses to start unless both `MONGODB_URI` and `JWT_SECRET` are explicitly set.
 
 - **Rule ID:** EXPRESS-SESS-002 / secret management
 - **Severity:** Medium, becoming High if deployed without `JWT_SECRET`

@@ -6,6 +6,15 @@ import { Hospital } from "../models/Hospital.js";
 import { Service } from "../models/Service.js";
 import { User } from "../models/User.js";
 
+if (process.env.NODE_ENV === "production") {
+  throw new Error("The demo seed is disabled in production");
+}
+
+const demoPassword = process.env.DEMO_USER_PASSWORD;
+if (!demoPassword || demoPassword.length < 12) {
+  throw new Error("Set DEMO_USER_PASSWORD to at least 12 characters before seeding");
+}
+
 await connectDatabase();
 
 const hospital = await Hospital.findOneAndUpdate(
@@ -26,7 +35,7 @@ const departments = await Promise.all([
 )));
 
 const [adminDepartment, opdDepartment, labDepartment] = departments;
-const passwordHash = await bcrypt.hash("DemoPass123!", 12);
+const passwordHash = await bcrypt.hash(demoPassword, 12);
 await User.findOneAndUpdate(
   { email: "admin@shurokkha.test" },
   {
@@ -68,5 +77,5 @@ await Promise.all([
   { upsert: true, new: true, setDefaultsOnInsert: true }
 )));
 
-console.log("Seed complete. Demo password: DemoPass123!");
+console.log("Seed complete. Demo password was read securely from the environment.");
 await mongoose.disconnect();

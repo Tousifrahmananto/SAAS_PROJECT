@@ -38,8 +38,9 @@ npm.cmd run dev:server
 npm.cmd run dev:client
 ```
 
-Open `http://localhost:5173`. Seeded development accounts use the password
-`DemoPass123!`:
+Before running the seed command, replace `DEMO_USER_PASSWORD` in the ignored
+`server/.env` file. Open `http://localhost:5173` and use one of the seeded
+development accounts:
 
 - `admin@shurokkha.test` — super administrator
 - `opd@shurokkha.test` — department-scoped OPD staff
