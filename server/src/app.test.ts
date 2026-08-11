@@ -18,3 +18,14 @@ describe("registration endpoint", () => {
     expect(response.body.error.code).toBe("VALIDATION_ERROR");
   });
 });
+
+describe("password reset endpoint", () => {
+  it("rejects a malformed reset token before database access", async () => {
+    const response = await request(app).post("/api/auth/reset-password").send({
+      token: "not-a-token",
+      password: "a-secure-new-password"
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
+});

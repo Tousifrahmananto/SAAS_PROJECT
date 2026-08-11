@@ -7,7 +7,10 @@ const schema = z.object({
   MONGODB_URI: z.string().min(1).optional(),
   DNS_SERVERS: z.string().optional(),
   JWT_SECRET: z.string().min(32).optional(),
-  CLIENT_ORIGIN: z.string().url().default("http://localhost:5173")
+  CLIENT_ORIGIN: z.string().url().default("http://localhost:5173"),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  PASSWORD_RESET_FROM: z.string().min(3).optional(),
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(20)
 });
 
 const parsed = schema.parse(process.env);

@@ -1,8 +1,17 @@
-.auth-switch {
+.auth-switch,
+.auth-actions {
   text-align: center;
 }
 
-.auth-switch button {
+.auth-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.84rem;
+}
+
+.auth-switch button,
+.auth-actions button {
   border: 0;
   background: transparent;
   color: #1769db;
@@ -10,8 +19,18 @@
   padding: 0;
 }
 
-.auth-switch button:hover {
+.auth-switch button:hover,
+.auth-actions button:hover {
   text-decoration: underline;
+}
+
+.success {
+  background: #ecfdf3;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 11px;
+  line-height: 1.45;
 }
 
 @media (min-width: 851px) {
