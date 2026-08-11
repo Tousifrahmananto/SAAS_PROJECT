@@ -89,8 +89,8 @@ authRouter.post("/register", registrationLimiter, async (req, res, next) => {
       fullName: input.fullName,
       email,
       passwordHash: await bcrypt.hash(input.password, 12),
-      roles: ["SUPER_ADMIN"],
-      permissions: [],
+      roles: ["PROVIDER_OWNER"],
+      permissions: ["organization:read", "organization:update", "staff:manage"],
       status: "ACTIVE"
     });
 

@@ -1,6 +1,15 @@
 import { Schema, model } from "mongoose";
 
-export const userRoles = ["SUPER_ADMIN", "BILLING_ADMIN", "CASHIER", "DEPARTMENT_STAFF", "DOCTOR"] as const;
+export const userRoles = [
+  "PROVIDER_OWNER",
+  "PROVIDER_STAFF",
+  "ADMIN",
+  "SUPER_ADMIN",
+  "BILLING_ADMIN",
+  "CASHIER",
+  "DEPARTMENT_STAFF",
+  "DOCTOR"
+] as const;
 
 const userSchema = new Schema({
   hospital: { type: Schema.Types.ObjectId, ref: "Hospital", required: true, index: true },

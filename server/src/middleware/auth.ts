@@ -35,7 +35,15 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
 export function requirePermission(permission: string) {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.auth) return next(new AppError(401, "Authentication required", "UNAUTHENTICATED"));
-    if (req.auth.roles.includes("SUPER_ADMIN") || req.auth.permissions.includes(permission)) return next();
+    if (req.auth.roles.includes("SUPER_ADMIN") || req.auth.roles.includes("ADMIN") || req.auth.permissions.includes(permission)) return next();
     next(new AppError(403, `Permission ${permission} is required`, "FORBIDDEN"));
+  };
+}
+
+export function requireRole(...allowedRoles: string[]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.auth) return next(new AppError(401, "Authentication required", "UNAUTHENTICATED"));
+    if (req.auth.roles.some((role) => allowedRoles.includes(role))) return next();
+    next(new AppError(403, "Your account role cannot perform this action", "FORBIDDEN"));
   };
 }

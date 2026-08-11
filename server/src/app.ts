@@ -7,6 +7,7 @@ import { requestContext } from "./middleware/requestContext.js";
 import { authRouter } from "./routes/auth.js";
 import { chargeRouter } from "./routes/charges.js";
 import { encounterRouter } from "./routes/encounters.js";
+import { organizationRouter } from "./routes/organizations.js";
 import { patientRouter } from "./routes/patients.js";
 
 export const app = express();
@@ -26,5 +27,6 @@ app.use("/api/auth", authRouter);
 app.use("/api/patients", patientRouter);
 app.use("/api/encounters", encounterRouter);
 app.use("/api/charges", chargeRouter);
+app.use("/api/organizations", organizationRouter);
 app.use(notFound);
 app.use(errorHandler);

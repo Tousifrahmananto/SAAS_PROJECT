@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import jwt from "jsonwebtoken";
+import { Types } from "mongoose";
 import request from "supertest";
 import { app } from "./app.js";
+import { env } from "./config/env.js";
 
 describe("health endpoint", () => {
   it("reports that the API is available", async () => {
@@ -27,5 +30,27 @@ describe("password reset endpoint", () => {
     });
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
+});
+
+describe("organization endpoints", () => {
+  it("requires authentication", async () => {
+    const response = await request(app).get("/api/organizations/me");
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("rejects provider staff before database access", async () => {
+    const token = jwt.sign({
+      hospitalId: new Types.ObjectId().toString(),
+      roles: ["PROVIDER_STAFF"],
+      permissions: []
+    }, env.JWT_SECRET, { subject: new Types.ObjectId().toString() });
+    const response = await request(app)
+      .patch("/api/organizations/me")
+      .set("authorization", `Bearer ${token}`)
+      .send({ name: "Blocked update" });
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("FORBIDDEN");
   });
 });

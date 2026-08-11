@@ -7,7 +7,8 @@ export async function writeAudit(
   action: string,
   entityType: string,
   entityId: Types.ObjectId,
-  after: unknown
+  after: unknown,
+  before: unknown = null
 ) {
   if (!req.auth) return;
   await AuditLog.create({
@@ -17,6 +18,7 @@ export async function writeAudit(
     action,
     entityType,
     entityId,
+    before,
     after,
     ipAddress: req.ip,
     userAgent: req.header("user-agent") ?? "",
