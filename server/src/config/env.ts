@@ -7,10 +7,14 @@ const schema = z.object({
   MONGODB_URI: z.string().min(1).optional(),
   DNS_SERVERS: z.string().optional(),
   JWT_SECRET: z.string().min(32).optional(),
-  CLIENT_ORIGIN: z.string().url().default("http://localhost:5173"),
+  CLIENT_ORIGIN: z.string().url().transform((value) => value.replace(/\/$/, "")).default("http://localhost:5173"),
+  SERVER_URL: z.string().url().transform((value) => value.replace(/\/$/, "")).default("http://localhost:4000"),
   RESEND_API_KEY: z.string().min(1).optional(),
   PASSWORD_RESET_FROM: z.string().min(3).optional(),
-  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(20)
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(20),
+  SSLCOMMERZ_STORE_ID: z.string().min(1).optional(),
+  SSLCOMMERZ_STORE_PASSWORD: z.string().min(1).optional(),
+  SSLCOMMERZ_SANDBOX: z.enum(["true", "false"]).default("true").transform((value) => value === "true")
 });
 
 const parsed = schema.parse(process.env);

@@ -8,6 +8,7 @@ import { env } from "../config/env.js";
 import { AppError } from "../lib/errors.js";
 import { passwordResetEmailConfigured, sendPasswordResetEmail } from "../lib/passwordResetEmail.js";
 import { Hospital } from "../models/Hospital.js";
+import { AuditLog } from "../models/AuditLog.js";
 import { PasswordResetToken } from "../models/PasswordResetToken.js";
 import { User } from "../models/User.js";
 
@@ -90,7 +91,7 @@ authRouter.post("/register", registrationLimiter, async (req, res, next) => {
       email,
       passwordHash: await bcrypt.hash(input.password, 12),
       roles: ["PROVIDER_OWNER"],
-      permissions: ["organization:read", "organization:update", "staff:manage"],
+      permissions: ["organization:read", "organization:update", "staff:read", "staff:manage", "catalog:read", "patients:read", "patients:create", "encounters:read", "encounters:create", "charges:read", "charges:create", "documents:read", "documents:create", "documents:update", "documents:delete", "appointments:read", "appointments:create", "appointments:update", "messages:read", "messages:create", "contracts:read", "contracts:sign", "invoices:read", "payments:read", "payments:create", "payments:refund", "reports:read", "claims:read", "claims:create"],
       status: "ACTIVE"
     });
 
@@ -155,6 +156,7 @@ authRouter.post("/reset-password", passwordResetLimiter, async (req, res, next) 
     user.passwordHash = await bcrypt.hash(input.password, 12);
     await user.save();
     await PasswordResetToken.deleteMany({ user: user._id, _id: { $ne: tokenRecord._id } });
+    await AuditLog.create({ hospital: user.hospital, actor: user._id, department: user.department, action: "PASSWORD_RESET_COMPLETED", entityType: "User", entityId: user._id, before: null, after: { resetAt: new Date() }, ipAddress: req.ip, userAgent: req.header("user-agent") ?? "", correlationId: req.correlationId });
 
     res.json({ message: "Password reset successfully. You can now sign in." });
   } catch (error) {
@@ -172,6 +174,7 @@ authRouter.post("/login", loginLimiter, async (req, res, next) => {
 
     user.lastLoginAt = new Date();
     await user.save();
+    await AuditLog.create({ hospital: user.hospital, actor: user._id, department: user.department, action: "USER_LOGIN", entityType: "User", entityId: user._id, before: null, after: { loggedInAt: user.lastLoginAt }, ipAddress: req.ip, userAgent: req.header("user-agent") ?? "", correlationId: req.correlationId });
     res.json(createSession(user));
   } catch (error) {
     next(error);

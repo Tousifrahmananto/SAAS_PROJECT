@@ -1,5 +1,10 @@
 # Three-Milestone Execution Plan
 
+> Implementation status (12 Aug 2026): all three milestones and the broader
+> provider-portal modules are implemented locally and pass automated checks.
+> Deployment and live gateway certification remain user-controlled release
+> activities requiring external credentials.
+
 ## Working product definition
 
 Build a role-based hospital billing system in which clinical departments add

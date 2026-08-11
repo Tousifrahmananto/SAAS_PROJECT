@@ -10,6 +10,18 @@ import { requireAuth, requirePermission } from "../middleware/auth.js";
 export const encounterRouter = Router();
 encounterRouter.use(requireAuth);
 
+encounterRouter.get("/", requirePermission("encounters:read"), async (req, res, next) => {
+  try {
+    const encounters = await Encounter.find({ hospital: req.auth!.hospitalId })
+      .populate("patient", "patientNo fullName phone")
+      .populate("primaryDepartment", "code name")
+      .sort({ openedAt: -1 })
+      .limit(100)
+      .lean();
+    res.json({ data: encounters });
+  } catch (error) { next(error); }
+});
+
 encounterRouter.post("/", requirePermission("encounters:create"), async (req, res, next) => {
   try {
     const input = z.object({

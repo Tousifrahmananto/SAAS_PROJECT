@@ -24,6 +24,14 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
     res.status(error.statusCode).json({ error: { code: error.code, message: error.message } });
     return;
   }
+  if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+    res.status(409).json({ error: { code: "DUPLICATE_RECORD", message: "A record with these unique details already exists" } });
+    return;
+  }
+  if (error && typeof error === "object" && "type" in error && error.type === "entity.too.large") {
+    res.status(413).json({ error: { code: "PAYLOAD_TOO_LARGE", message: "The uploaded request is too large" } });
+    return;
+  }
   console.error(error);
   res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred" } });
 }

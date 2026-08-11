@@ -1,29 +1,14 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import "./auth.css";
 import "./dashboard.css";
+import { PortalDashboard } from "./PortalDashboard";
 
-interface Session {
+export interface Session {
   token: string;
   user: { fullName: string; email: string; roles: string[] };
 }
 
-interface Organization {
-  _id: string;
-  code: string;
-  name: string;
-  organizationType: "HOSPITAL" | "CLINIC" | "BILLING_PROVIDER" | "OTHER";
-  status: "PENDING" | "APPROVED" | "SUSPENDED" | "DEACTIVATED";
-  address: string;
-  district: string;
-  phone: string;
-  email: string;
-  website: string;
-  contactPersonName: string;
-  registrationNumber: string;
-  binTin: string;
-}
-
-const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+export const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
@@ -45,7 +30,10 @@ export function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<Session | null>(() => {
+    try { return JSON.parse(sessionStorage.getItem("hospital-billing-session") ?? "null") as Session | null; }
+    catch { return null; }
+  });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,6 +52,7 @@ export function App() {
       const payload = await readPayload(response);
       if (!response.ok) throw new Error(payload.error?.message ?? "Sign in failed");
       setSession(payload);
+      sessionStorage.setItem("hospital-billing-session", JSON.stringify(payload));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Sign in failed");
     } finally {
@@ -86,6 +75,7 @@ export function App() {
       const payload = await readPayload(response);
       if (!response.ok) throw new Error(payload.error?.message ?? "Registration failed");
       setSession(payload);
+      sessionStorage.setItem("hospital-billing-session", JSON.stringify(payload));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Registration failed");
     } finally {
@@ -152,7 +142,7 @@ export function App() {
   const heading = mode === "login" ? "Welcome back" : mode === "register" ? "Create your workspace" : mode === "forgot" ? "Forgot your password?" : "Choose a new password";
   const description = mode === "login" ? "Sign in with your hospital account." : mode === "register" ? "Create a hospital and its first administrator." : mode === "forgot" ? "Enter your account email and we’ll send a secure reset link." : "Enter a new password of at least 12 characters.";
 
-  if (session) return <Dashboard session={session} onLogout={() => setSession(null)} />;
+  if (session) return <PortalDashboard session={session} onLogout={() => { sessionStorage.removeItem("hospital-billing-session"); setSession(null); }} />;
 
   return <main className="login-page">
     <section className="login-card" aria-labelledby="login-heading">
@@ -182,103 +172,4 @@ export function App() {
       </form>
     </section>
   </main>;
-}
-
-function Dashboard({ session, onLogout }: { session: Session; onLogout: () => void }) {
-  const [view, setView] = useState<"dashboard" | "organization">("dashboard");
-  return <div className="shell">
-    <aside><div className="brand">Hospital<br /><strong>Billing</strong></div><nav aria-label="Main navigation"><a className={view === "dashboard" ? "active" : ""} href="#dashboard" onClick={() => setView("dashboard")}>Dashboard</a><a className={view === "organization" ? "active" : ""} href="#organization" onClick={() => setView("organization")}>Organization Profile</a><a href="#documents">Documents</a><a href="#appointments">Appointments</a><a href="#invoices">Billing & Invoices</a><a href="#payments">Payments</a><a href="#reports">Reports</a></nav></aside>
-    <main className="workspace">
-      <header><div><span className="eyebrow">Milestone 1</span><h1>{view === "dashboard" ? "Revenue & collection overview" : "Organization profile"}</h1></div><div className="user"><span>{session.user.fullName}</span><button onClick={onLogout}>Sign out</button></div></header>
-      {view === "dashboard" ? <>
-        <section className="metrics" aria-label="Billing metrics">
-          <Metric label="Today’s billed" value="৳ 0.00" detail="Waiting for invoices" />
-          <Metric label="Collected" value="৳ 0.00" detail="Payments arrive in Milestone 3" />
-          <Metric label="Outstanding" value="৳ 0.00" detail="No released invoices" />
-          <Metric label="Your role" value={session.user.roles[0]?.replaceAll("_", " ") ?? "USER"} detail="Access enforced by API" />
-        </section>
-        <section className="panel"><div><span className="eyebrow">Foundation</span><h2>Your provider workspace is connected</h2><p>Complete the organization profile before adding staff, documents, appointments, invoices, and payments.</p></div><button className="primary" onClick={() => setView("organization")}>Complete organization profile</button></section>
-      </> : <OrganizationProfile session={session} />}
-    </main>
-  </div>;
-}
-
-function OrganizationProfile({ session }: { session: Session }) {
-  const [organization, setOrganization] = useState<Organization | null>(null);
-  const [form, setForm] = useState<Partial<Organization>>({});
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [busy, setBusy] = useState(true);
-  const editable = session.user.roles.some((role) => ["PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"].includes(role));
-
-  useEffect(() => {
-    let active = true;
-    fetch(`${apiBaseUrl}/api/organizations/me`, { headers: { authorization: `Bearer ${session.token}` } })
-      .then(async (response) => {
-        const payload = await readPayload(response);
-        if (!response.ok) throw new Error(payload.error?.message ?? "Could not load organization");
-        if (active) {
-          setOrganization(payload.data);
-          setForm(payload.data);
-        }
-      })
-      .catch((reason) => active && setError(reason instanceof Error ? reason.message : "Could not load organization"))
-      .finally(() => active && setBusy(false));
-    return () => { active = false; };
-  }, [session.token]);
-
-  function setField<K extends keyof Organization>(field: K, value: Organization[K]) {
-    setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    setSuccess("");
-    try {
-      const allowedFields = ["name", "organizationType", "address", "district", "phone", "email", "website", "contactPersonName", "registrationNumber", "binTin"] as const;
-      const body = Object.fromEntries(allowedFields.map((field) => [field, form[field] ?? ""]));
-      const response = await fetch(`${apiBaseUrl}/api/organizations/me`, {
-        method: "PATCH",
-        headers: { authorization: `Bearer ${session.token}`, "content-type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      const payload = await readPayload(response);
-      if (!response.ok) throw new Error(payload.error?.message ?? "Could not update organization");
-      setOrganization(payload.data);
-      setForm(payload.data);
-      setSuccess("Organization profile updated successfully.");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not update organization");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (busy && !organization) return <section className="profile-card"><p>Loading organization…</p></section>;
-  if (!organization) return <section className="profile-card"><div className="error" role="alert">{error || "Organization unavailable"}</div></section>;
-
-  return <section className="profile-card">
-    <div className="profile-heading"><div><span className="status-badge">{organization.status ?? "PENDING"}</span><h2>{organization.name}</h2><p>Organization code: {organization.code}</p></div><span>{editable ? "Owner access" : "Read-only access"}</span></div>
-    <form className="profile-form" onSubmit={save}>
-      <label>Organization name<input value={form.name ?? ""} onChange={(event) => setField("name", event.target.value)} disabled={!editable} required /></label>
-      <label>Organization type<select value={form.organizationType ?? "HOSPITAL"} onChange={(event) => setField("organizationType", event.target.value as Organization["organizationType"])} disabled={!editable}><option value="HOSPITAL">Hospital</option><option value="CLINIC">Clinic</option><option value="BILLING_PROVIDER">Billing provider</option><option value="OTHER">Other</option></select></label>
-      <label>Contact person<input value={form.contactPersonName ?? ""} onChange={(event) => setField("contactPersonName", event.target.value)} disabled={!editable} /></label>
-      <label>Phone<input value={form.phone ?? ""} onChange={(event) => setField("phone", event.target.value)} disabled={!editable} /></label>
-      <label>Email<input type="email" value={form.email ?? ""} onChange={(event) => setField("email", event.target.value)} disabled={!editable} /></label>
-      <label>Website<input type="url" value={form.website ?? ""} onChange={(event) => setField("website", event.target.value)} disabled={!editable} /></label>
-      <label>District<input value={form.district ?? ""} onChange={(event) => setField("district", event.target.value)} disabled={!editable} /></label>
-      <label>Registration number<input value={form.registrationNumber ?? ""} onChange={(event) => setField("registrationNumber", event.target.value)} disabled={!editable} /></label>
-      <label>BIN/TIN<input value={form.binTin ?? ""} onChange={(event) => setField("binTin", event.target.value)} disabled={!editable} /></label>
-      <label className="wide">Address<textarea value={form.address ?? ""} onChange={(event) => setField("address", event.target.value)} disabled={!editable} rows={3} /></label>
-      {error && <div className="error wide" role="alert">{error}</div>}
-      {success && <div className="success wide" role="status">{success}</div>}
-      {editable && <div className="wide profile-submit"><button className="primary" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button></div>}
-    </form>
-  </section>;
-}
-
-function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <article className="metric"><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>;
 }

@@ -17,8 +17,12 @@ definition of done for each milestone.
 
 ## Current status
 
-Milestone 1 is in progress. The accepted stack is React, Express, MongoDB with
-Mongoose, and Node.js, using TypeScript across the client and API.
+All three semester milestones are implemented locally. The application includes
+provider onboarding and staff RBAC, patient/encounter charge capture, documents,
+appointments, support messaging, contracts, claims, reports, immutable invoice
+snapshots, partial payments, SSLCOMMERZ/Bangla QR checkout, refunds,
+reconciliation, notifications, PDF invoices/receipts, CSV exports, and audit
+history. Production payment testing still requires SSLCOMMERZ sandbox credentials.
 
 ## Run locally
 
@@ -55,10 +59,51 @@ npm.cmd test
 npm.cmd run build
 ```
 
-## Milestone 1 API surface
+## Production environment
+
+Backend variables on Render:
+
+```env
+NODE_ENV=production
+MONGODB_URI=mongodb+srv://...
+JWT_SECRET=at-least-32-random-characters
+CLIENT_ORIGIN=https://your-vercel-project.vercel.app
+SERVER_URL=https://your-render-service.onrender.com
+RESEND_API_KEY=re_...
+PASSWORD_RESET_FROM=Hospital Billing <noreply@your-verified-domain.com>
+PASSWORD_RESET_TTL_MINUTES=20
+SSLCOMMERZ_STORE_ID=
+SSLCOMMERZ_STORE_PASSWORD=
+SSLCOMMERZ_SANDBOX=true
+```
+
+Frontend variable on Vercel:
+
+```env
+VITE_API_URL=https://your-render-service.onrender.com
+```
+
+Never put MongoDB, Resend, JWT, or gateway credentials in Vercel frontend
+variables. Configure SSLCOMMERZ's IPN listener to
+`https://your-render-service.onrender.com/api/payments/sslcommerz/ipn`.
+
+## API surface
 
 - `GET /api/health`
-- `POST /api/auth/login`
+- `POST /api/auth/register|login|forgot-password|reset-password`
+- `GET|PATCH /api/organizations/me`
+- `GET|POST|PATCH /api/staff`
 - `GET|POST /api/patients`
-- `POST /api/encounters`
-- `POST /api/charges`
+- `GET|POST /api/encounters|charges`
+- `GET|POST /api/catalog/departments|services`
+- `GET|POST|PATCH|DELETE /api/documents`
+- `GET|POST|PATCH /api/appointments`
+- `GET|POST /api/messages`
+- `GET|POST|PATCH /api/contracts|reports|claims`
+- `GET|POST|PATCH /api/invoices|payments|refunds|reconciliation`
+- `GET|PATCH /api/notifications`
+- `GET /api/dashboard|audit`
+
+Financial amounts use Decimal128, invoice items are immutable snapshots, payment
+settlement is transactional and idempotent, and privileged mutations are
+recorded in the audit log.

@@ -35,7 +35,12 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
 export function requirePermission(permission: string) {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.auth) return next(new AppError(401, "Authentication required", "UNAUTHENTICATED"));
-    if (req.auth.roles.includes("SUPER_ADMIN") || req.auth.roles.includes("ADMIN") || req.auth.permissions.includes(permission)) return next();
+    if (
+      req.auth.roles.includes("SUPER_ADMIN") ||
+      req.auth.roles.includes("ADMIN") ||
+      req.auth.roles.includes("PROVIDER_OWNER") ||
+      req.auth.permissions.includes(permission)
+    ) return next();
     next(new AppError(403, `Permission ${permission} is required`, "FORBIDDEN"));
   };
 }

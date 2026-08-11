@@ -17,5 +17,17 @@ services:
         generateValue: true
       - key: CLIENT_ORIGIN
         sync: false
+      - key: SERVER_URL
+        value: https://hospital-billing-api-1669.onrender.com
+      - key: RESEND_API_KEY
+        sync: false
+      - key: PASSWORD_RESET_FROM
+        sync: false
+      - key: SSLCOMMERZ_STORE_ID
+        sync: false
+      - key: SSLCOMMERZ_STORE_PASSWORD
+        sync: false
+      - key: SSLCOMMERZ_SANDBOX
+        value: "true"
       - key: DNS_SERVERS
         value: 8.8.8.8,1.1.1.1

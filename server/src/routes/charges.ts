@@ -12,6 +12,22 @@ import { requireAuth, requirePermission } from "../middleware/auth.js";
 export const chargeRouter = Router();
 chargeRouter.use(requireAuth);
 
+chargeRouter.get("/", requirePermission("charges:read"), async (req, res, next) => {
+  try {
+    const filter: Record<string, unknown> = { hospital: req.auth!.hospitalId };
+    if (req.auth!.departmentId && !req.auth!.roles.some((role) => ["ADMIN", "SUPER_ADMIN", "PROVIDER_OWNER"].includes(role))) filter.department = req.auth!.departmentId;
+    const charges = await Charge.find(filter)
+      .populate("encounter", "encounterNo")
+      .populate("department", "code name")
+      .populate("service", "code name")
+      .populate("enteredBy", "fullName")
+      .sort({ occurredAt: -1 })
+      .limit(100)
+      .lean();
+    res.json({ data: charges });
+  } catch (error) { next(error); }
+});
+
 chargeRouter.post("/", requirePermission("charges:create"), async (req, res, next) => {
   try {
     const input = z.object({
@@ -24,7 +40,7 @@ chargeRouter.post("/", requirePermission("charges:create"), async (req, res, nex
       sourceReference: z.string().trim().max(80).default("")
     }).parse(req.body);
     const departmentId = req.auth!.departmentId;
-    if (!departmentId && !req.auth!.roles.includes("SUPER_ADMIN")) {
+    if (!departmentId && !req.auth!.roles.some((role) => ["PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"].includes(role))) {
       throw new AppError(403, "A department assignment is required", "DEPARTMENT_REQUIRED");
     }
     const service = await Service.findOne({ _id: input.serviceId, hospital: req.auth!.hospitalId, isActive: true });

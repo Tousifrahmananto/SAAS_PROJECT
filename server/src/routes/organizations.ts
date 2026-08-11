@@ -8,6 +8,38 @@ import { Hospital } from "../models/Hospital.js";
 export const organizationRouter = Router();
 organizationRouter.use(requireAuth);
 
+organizationRouter.get(
+  "/",
+  requireRole("ADMIN", "SUPER_ADMIN"),
+  async (_req, res, next) => {
+    try {
+      const organizations = await Hospital.find({}).sort({ createdAt: -1 }).lean();
+      res.json({ data: organizations });
+    } catch (error) { next(error); }
+  }
+);
+
+organizationRouter.patch(
+  "/:organizationId/status",
+  requireRole("ADMIN", "SUPER_ADMIN"),
+  async (req, res, next) => {
+    try {
+      const params = z.object({ organizationId: z.string().length(24) }).parse(req.params);
+      const input = z.object({ status: z.enum(["PENDING", "APPROVED", "SUSPENDED", "DEACTIVATED"]) }).strict().parse(req.body);
+      const before = await Hospital.findById(params.organizationId).lean();
+      if (!before) throw new AppError(404, "Organization not found", "ORGANIZATION_NOT_FOUND");
+      const organization = await Hospital.findByIdAndUpdate(
+        params.organizationId,
+        { $set: { status: input.status, isActive: input.status !== "DEACTIVATED" } },
+        { new: true, runValidators: true }
+      );
+      if (!organization) throw new AppError(404, "Organization not found", "ORGANIZATION_NOT_FOUND");
+      await writeAudit(req, "ORGANIZATION_STATUS_UPDATED", "Hospital", organization._id, organization.toObject(), before);
+      res.json({ data: organization });
+    } catch (error) { next(error); }
+  }
+);
+
 organizationRouter.get("/me", async (req, res, next) => {
   try {
     const organization = await Hospital.findOne({

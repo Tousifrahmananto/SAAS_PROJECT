@@ -54,3 +54,46 @@ describe("organization endpoints", () => {
     expect(response.body.error.code).toBe("FORBIDDEN");
   });
 });
+
+describe("portal authorization", () => {
+  function token(roles: string[], permissions: string[] = []) {
+    return jwt.sign({
+      hospitalId: new Types.ObjectId().toString(),
+      roles,
+      permissions
+    }, env.JWT_SECRET, { subject: new Types.ObjectId().toString() });
+  }
+
+  it("protects document data", async () => {
+    const response = await request(app).get("/api/documents");
+    expect(response.status).toBe(401);
+  });
+
+  it("does not expose staff lists without permission", async () => {
+    const response = await request(app).get("/api/staff").set("authorization", `Bearer ${token(["PROVIDER_STAFF"])}`);
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("FORBIDDEN");
+  });
+
+  it("rejects invoice creation by ordinary provider staff", async () => {
+    const response = await request(app)
+      .post("/api/invoices")
+      .set("authorization", `Bearer ${token(["PROVIDER_STAFF"], ["invoices:read"])}`)
+      .send({});
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects reconciliation by non-administrators", async () => {
+    const response = await request(app)
+      .post("/api/reconciliation")
+      .set("authorization", `Bearer ${token(["PROVIDER_OWNER"])}`)
+      .send({});
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects malformed payment notifications", async () => {
+    const response = await request(app).post("/api/payments/sslcommerz/ipn").type("form").send({});
+    expect(response.status).toBe(400);
+    expect(response.text).toBe("INVALID");
+  });
+});
