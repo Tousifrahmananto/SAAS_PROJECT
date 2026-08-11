@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -54,5 +54,36 @@ describe("App", () => {
     expect(await screen.findByRole("link", { name: "Patients & Charges" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Invoices" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Contracts" })).toBeInTheDocument();
+  });
+
+  it("creates a manual invoice without losing the submitted form reference", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/auth/login")) return new Response(JSON.stringify({ token: "test-token", user: { fullName: "Provider Owner", email: "owner@example.com", roles: ["PROVIDER_OWNER"] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/api/dashboard")) return new Response(JSON.stringify({ data: { billed: "0.00", collected: "0.00", outstanding: "0.00", invoices: 0, patients: 0, openEncounters: 0, activeStaff: 1, upcomingAppointments: 0, claims: {} } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.endsWith("/api/invoices") && options?.method === "POST") return new Response(JSON.stringify({ data: { invoiceNo: "INV-TEST" } }), { status: 201, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "long-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Invoices" }));
+
+    const section = screen.getByRole("heading", { name: "Create manual invoice" }).closest("section")!;
+    const form = section.querySelector("form")!;
+    const fields = within(section);
+    const title = fields.getByPlaceholderText("Invoice title") as HTMLInputElement;
+    fireEvent.change(title, { target: { value: "Ward charges" } });
+    fireEvent.change(form.querySelector('input[name="dueAt"]')!, { target: { value: "2026-08-30" } });
+    fireEvent.change(fields.getByPlaceholderText("Line description"), { target: { value: "Consultation" } });
+    fireEvent.change(form.querySelector('input[name="quantity"]')!, { target: { value: "2" } });
+    fireEvent.change(fields.getByPlaceholderText("Unit price"), { target: { value: "500" } });
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/invoices"), expect.objectContaining({ method: "POST" })));
+    await waitFor(() => expect(title.value).toBe(""));
+    expect(screen.queryByText(/Cannot read properties of null/)).not.toBeInTheDocument();
   });
 });
