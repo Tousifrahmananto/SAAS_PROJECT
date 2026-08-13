@@ -5,7 +5,7 @@ import { PortalDashboard } from "./PortalDashboard";
 
 export interface Session {
   token: string;
-  user: { fullName: string; email: string; roles: string[] };
+  user: { fullName: string; email: string; roles: string[]; permissions?: string[] };
 }
 
 export const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");

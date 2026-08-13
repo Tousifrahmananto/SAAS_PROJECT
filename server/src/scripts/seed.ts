@@ -60,7 +60,7 @@ await User.findOneAndUpdate(
     fullName: "Demo OPD Staff",
     passwordHash,
     roles: ["DEPARTMENT_STAFF"],
-    permissions: ["patients:read", "patients:create", "encounters:create", "charges:create"],
+    permissions: ["catalog:read", "patients:read", "patients:create", "encounters:read", "encounters:create", "charges:read", "charges:create"],
     status: "ACTIVE"
   },
   { upsert: true, new: true, setDefaultsOnInsert: true }

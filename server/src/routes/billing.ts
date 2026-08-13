@@ -387,7 +387,13 @@ refundRouter.patch("/:refundId/approve", requireRole("ADMIN", "SUPER_ADMIN"), as
         invoice.status = "UNPAID";
         await invoice.save();
       }
-      payment.status = decimal(refund.amount).equals(decimal(payment.amount)) ? "REFUNDED" : "PARTIALLY_REFUNDED";
+      const previousRefunds = await Refund.find({
+        payment: payment._id,
+        _id: { $ne: refund._id },
+        status: "REFUNDED"
+      }).lean();
+      const refundedTotal = previousRefunds.reduce((sum, item) => sum.plus(decimal(item.amount)), decimal(refund.amount));
+      payment.status = refundedTotal.greaterThanOrEqualTo(decimal(payment.amount)) ? "REFUNDED" : "PARTIALLY_REFUNDED";
       await payment.save();
     }
     refund.approvedBy = req.auth!.userId;

@@ -171,6 +171,14 @@ authRouter.post("/login", loginLimiter, async (req, res, next) => {
     if (!user || user.status !== "ACTIVE" || !(await bcrypt.compare(input.password, user.passwordHash))) {
       throw new AppError(401, "Invalid email or password", "INVALID_CREDENTIALS");
     }
+    const activeHospital = await Hospital.exists({
+      _id: user.hospital,
+      isActive: { $ne: false },
+      status: { $nin: ["SUSPENDED", "DEACTIVATED"] }
+    });
+    if (!activeHospital) {
+      throw new AppError(403, "This organization is not currently allowed to sign in", "ORGANIZATION_INACTIVE");
+    }
 
     user.lastLoginAt = new Date();
     await user.save();

@@ -32,8 +32,8 @@ patientRouter.post("/", requirePermission("patients:create"), async (req, res, n
       dateOfBirth: z.coerce.date(),
       sex: z.enum(["MALE", "FEMALE", "OTHER", "UNKNOWN"]).default("UNKNOWN"),
       phone: z.string().trim().min(7).max(20),
-      email: z.email().optional(),
-      nidOrPassport: z.string().trim().max(40).optional()
+      email: z.union([z.email(), z.literal("")]).transform((value) => value || undefined).optional(),
+      nidOrPassport: z.string().trim().max(40).transform((value) => value || undefined).optional()
     }).parse(req.body);
     const sequence = await nextSequence(req.auth!.hospitalId, "patient");
     const patient = await Patient.create({ ...input, hospital: req.auth!.hospitalId, patientNo: `P-${String(sequence).padStart(6, "0")}` });

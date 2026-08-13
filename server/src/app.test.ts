@@ -91,6 +91,22 @@ describe("portal authorization", () => {
     expect(response.status).toBe(403);
   });
 
+  it("prevents provider owners from escalating staff to platform administrator", async () => {
+    const response = await request(app)
+      .post("/api/staff")
+      .set("authorization", `Bearer ${token(["PROVIDER_OWNER"])}`)
+      .send({
+        fullName: "Blocked Administrator",
+        email: "blocked-admin@example.test",
+        employeeNo: "BLOCK-001",
+        password: "secure-password-123",
+        role: "ADMIN",
+        permissions: []
+      });
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("FORBIDDEN");
+  });
+
   it("rejects malformed payment notifications", async () => {
     const response = await request(app).post("/api/payments/sslcommerz/ipn").type("form").send({});
     expect(response.status).toBe(400);
