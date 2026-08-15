@@ -97,7 +97,7 @@ export function PortalDashboard({ session, onLogout }: { session: Session; onLog
     appointments: <AppointmentsPage api={api} isAdmin={isAdmin} canCreate={hasPermission("appointments:create")} />,
     messages: <MessagesPage api={api} canCreate={hasPermission("messages:create")} />,
     contracts: <ContractsPage api={api} isAdmin={isAdmin} canSign={hasPermission("contracts:sign")} />,
-    invoices: <InvoicesPage api={api} token={session.token} canCreate={privileged || roles.includes("BILLING_ADMIN")} canPay={hasPermission("payments:create")} />,
+    invoices: <InvoicesPage api={api} token={session.token} canCreate={privileged || roles.includes("BILLING_ADMIN")} canPay={hasPermission("payments:create")} canUseCatalog={hasPermission("catalog:read")} />,
     payments: <PaymentsPage api={api} token={session.token} isAdmin={isAdmin} canRefund={hasPermission("payments:refund")} />,
     reports: <ReportsPage api={api} isAdmin={isAdmin} />,
     claims: <ClaimsPage api={api} token={session.token} isAdmin={isAdmin} canCreate={hasPermission("claims:create")} />,
@@ -202,13 +202,118 @@ function ContractsPage({ api, isAdmin, canSign }: { api: Api; isAdmin: boolean; 
   return <>{isAdmin && <section className="panel-card"><h2>Create agreement</h2><form className="stack-form" onSubmit={create}><input name="title" placeholder="Contract title" required /><textarea name="body" placeholder="Agreement terms" minLength={20} required /><button className="primary">Publish for signature</button></form></section>}{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} />{!resource.busy && !resource.error && !resource.rows.length ? <div className="empty-state">No agreements yet.</div> : <div className="card-list">{resource.rows.map((row) => <article className="resource-card" key={row._id}><span className="status-badge">{row.status}</span><h3>{row.title}</h3><p>{row.body}</p>{row.status === "PENDING" && canSign && !isAdmin && <div className="row-actions"><button className="primary" onClick={() => void decide(row._id, "ACCEPTED")}>Accept & sign</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></div>}</article>)}</div>}</>;
 }
 
-function InvoicesPage({ api, token, canCreate, canPay }: { api: Api; token: string; canCreate: boolean; canPay: boolean }) {
+type InvoiceBuilderLine = {
+  id: string;
+  description: string;
+  unitLabel: string;
+  quantity: string;
+  unitPrice: string;
+  vatPercent: string;
+  selected: boolean;
+  source: "template" | "catalog";
+};
+
+const demoInvoiceLines: InvoiceBuilderLine[] = [
+  { id: "consultation", description: "Doctor consultation", unitLabel: "visit", quantity: "1", unitPrice: "1000", vatPercent: "0", selected: false, source: "template" },
+  { id: "ward", description: "General ward bed", unitLabel: "day", quantity: "1", unitPrice: "1500", vatPercent: "0", selected: false, source: "template" },
+  { id: "cabin", description: "Private cabin", unitLabel: "day", quantity: "1", unitPrice: "3500", vatPercent: "0", selected: false, source: "template" },
+  { id: "nursing", description: "Nursing care", unitLabel: "day", quantity: "1", unitPrice: "500", vatPercent: "0", selected: false, source: "template" },
+  { id: "diagnostics", description: "Diagnostic and laboratory tests", unitLabel: "test", quantity: "1", unitPrice: "1200", vatPercent: "0", selected: false, source: "template" },
+  { id: "medicine", description: "Medicines and medical supplies", unitLabel: "unit", quantity: "1", unitPrice: "500", vatPercent: "0", selected: false, source: "template" },
+  { id: "procedure", description: "Procedure / operation theatre charge", unitLabel: "procedure", quantity: "1", unitPrice: "5000", vatPercent: "0", selected: false, source: "template" },
+  { id: "ambulance", description: "Ambulance service", unitLabel: "trip", quantity: "1", unitPrice: "2000", vatPercent: "0", selected: false, source: "template" },
+  { id: "other", description: "Other hospital charge", unitLabel: "unit", quantity: "1", unitPrice: "100", vatPercent: "0", selected: false, source: "template" }
+];
+
+function numberValue(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function GuidedInvoiceBuilder({ api, canUseCatalog, onCreated, onError }: { api: Api; canUseCatalog: boolean; onCreated: (result: any) => void; onError: (message: string) => void }) {
+  const catalog = useResource(api, "/catalog/services", canUseCatalog);
+  const [lines, setLines] = useState<InvoiceBuilderLine[]>(() => demoInvoiceLines.map((line) => ({ ...line })));
+  const [discountAmount, setDiscountAmount] = useState("0");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!catalog.rows.length) return;
+    setLines((current) => {
+      const existing = new Set(current.map((line) => line.id));
+      const additions = catalog.rows.filter((service) => !existing.has(`catalog-${service._id}`)).map((service) => ({
+        id: `catalog-${service._id}`,
+        description: String(service.name),
+        unitLabel: "unit",
+        quantity: "1",
+        unitPrice: decimal(service.standardPrice),
+        vatPercent: decimal(service.vatRatePercent),
+        selected: false,
+        source: "catalog" as const
+      }));
+      return additions.length ? [...current, ...additions] : current;
+    });
+  }, [catalog.rows]);
+
+  function updateLine(id: string, changes: Partial<InvoiceBuilderLine>) {
+    setLines((current) => current.map((line) => line.id === id ? { ...line, ...changes } : line));
+  }
+
+  const selectedLines = lines.filter((line) => line.selected);
+  const subtotal = selectedLines.reduce((sum, line) => sum + numberValue(line.quantity) * numberValue(line.unitPrice), 0);
+  const vat = selectedLines.reduce((sum, line) => {
+    const base = numberValue(line.quantity) * numberValue(line.unitPrice);
+    return sum + base * numberValue(line.vatPercent) / 100;
+  }, 0);
+  const total = Math.max(0, subtotal + vat - numberValue(discountAmount));
+
+  async function createInvoice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedLines.length) { onError("Select at least one charge to include in the invoice."); return; }
+    if (selectedLines.some((line) => !line.description.trim() || numberValue(line.quantity) <= 0 || numberValue(line.unitPrice) <= 0 || numberValue(line.vatPercent) < 0)) {
+      onError("Every selected charge needs a description, positive quantity/days, and positive unit price."); return;
+    }
+    if (numberValue(discountAmount) > subtotal + vat) { onError("Discount cannot be greater than the invoice total."); return; }
+    const form = event.currentTarget;
+    const values = formValues(event);
+    setSubmitting(true);
+    try {
+      const result = await api("/invoices", {
+        method: "POST",
+        body: JSON.stringify({
+          patientName: values.patientName,
+          patientEmail: values.patientEmail,
+          patientPhone: values.patientPhone,
+          title: values.title,
+          dueAt: values.dueAt,
+          status: "UNPAID",
+          discountAmount: discountAmount || "0",
+          items: selectedLines.map((line) => ({ description: `${line.description.trim()} (per ${line.unitLabel})`, quantity: line.quantity, unitPrice: line.unitPrice, vatPercent: line.vatPercent || "0" }))
+        })
+      });
+      form.reset();
+      setDiscountAmount("0");
+      setLines((current) => current.map((line) => ({ ...line, selected: false, quantity: "1" })));
+      onCreated(result);
+    } catch (reason) { onError(reason instanceof Error ? reason.message : "Invoice creation failed"); }
+    finally { setSubmitting(false); }
+  }
+
+  return <section className="panel-card invoice-builder">
+    <div className="invoice-builder-heading"><div><span className="eyebrow">Guided invoice builder</span><h2>Create manual invoice</h2><p>Complete the patient details, tick the charges that apply, adjust days or quantities, then review the total before issuing.</p></div><div className="invoice-builder-total"><small>Invoice total</small><strong>BDT {total.toFixed(2)}</strong><span>{selectedLines.length} charge{selectedLines.length === 1 ? "" : "s"} selected</span></div></div>
+    <form className="invoice-builder-form" onSubmit={createInvoice}>
+      <fieldset><legend>1. Patient and invoice details</legend><div className="invoice-details-grid"><label>Patient name<input name="patientName" placeholder="Example: Rahim Ahmed" required /></label><label>Patient email<input name="patientEmail" type="email" placeholder="patient@example.com" required /></label><label>Patient phone<input name="patientPhone" type="tel" placeholder="01XXXXXXXXX" required /></label><label>Invoice title<input name="title" placeholder="Example: Admission and treatment bill" required /></label><label>Payment due date<input name="dueAt" type="date" required /></label></div></fieldset>
+      <fieldset><legend>2. Select charges and adjust prices</legend><p className="field-help">Demo prices are examples in BDT. Tick only the services the patient received. For hospital stays, enter the number of days as the quantity.</p>{catalog.error && <div className="error">Service catalog could not be loaded: {catalog.error}</div>}<div className="invoice-lines"><div className="invoice-line invoice-line-header"><span>Include</span><span>Charge description</span><span>Unit</span><span>Quantity / days</span><span>Price per unit</span><span>VAT %</span><span>Line total</span></div>{lines.map((line) => { const base = numberValue(line.quantity) * numberValue(line.unitPrice); const lineTotal = base + base * numberValue(line.vatPercent) / 100; return <div className={`invoice-line ${line.selected ? "is-selected" : ""}`} key={line.id}><label className="invoice-check"><input type="checkbox" checked={line.selected} onChange={(event) => updateLine(line.id, { selected: event.target.checked })} aria-label={`Include ${line.description}`} /><span>{line.source === "catalog" ? "Catalog" : "Add"}</span></label><input value={line.description} onChange={(event) => updateLine(line.id, { description: event.target.value })} aria-label={`${line.id} description`} /><select value={line.unitLabel} onChange={(event) => updateLine(line.id, { unitLabel: event.target.value })} aria-label={`${line.id} unit`}><option value="unit">Unit</option><option value="day">Day</option><option value="visit">Visit</option><option value="test">Test</option><option value="procedure">Procedure</option><option value="trip">Trip</option></select><input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} aria-label={`${line.id} quantity or days`} disabled={!line.selected} /><input type="number" min="0.01" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.id, { unitPrice: event.target.value })} aria-label={`${line.id} unit price`} disabled={!line.selected} /><input type="number" min="0" step="0.01" value={line.vatPercent} onChange={(event) => updateLine(line.id, { vatPercent: event.target.value })} aria-label={`${line.id} VAT percent`} disabled={!line.selected} /><strong>BDT {line.selected ? lineTotal.toFixed(2) : "0.00"}</strong></div>; })}</div></fieldset>
+      <fieldset><legend>3. Review and issue</legend><div className="invoice-review"><label>Discount (BDT)<input type="number" min="0" step="0.01" value={discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} /></label><dl><div><dt>Subtotal</dt><dd>BDT {subtotal.toFixed(2)}</dd></div><div><dt>VAT</dt><dd>BDT {vat.toFixed(2)}</dd></div><div><dt>Discount</dt><dd>BDT {numberValue(discountAmount).toFixed(2)}</dd></div><div className="invoice-grand-total"><dt>Total due</dt><dd>BDT {total.toFixed(2)}</dd></div></dl><button className="primary" disabled={submitting || !selectedLines.length}>{submitting ? "Creating invoice..." : "Issue and email invoice"}</button></div></fieldset>
+    </form>
+  </section>;
+}
+
+function InvoicesPage({ api, token, canCreate, canPay, canUseCatalog }: { api: Api; token: string; canCreate: boolean; canPay: boolean; canUseCatalog: boolean }) {
   const resource = useResource(api, "/invoices"); const encounters = useResource(api, "/encounters", canCreate); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("SSLCOMMERZ"); const [gateway, setGateway] = useState<Row | null>(null);
   const [encounterRecipient, setEncounterRecipient] = useState({ patientName: "", patientEmail: "", patientPhone: "" });
   useEffect(() => { if (canPay) void api("/payments/config").then((result) => setGateway(result.data)).catch((reason) => setError(reason instanceof Error ? reason.message : "Payment configuration failed")); }, [api, canPay]);
   function deliveryMessage(result: any) { if (result.emailDelivery?.status === "SENT") { setError(""); setNotice(`Invoice emailed to ${result.data.patientEmail}.`); } else if (result.emailDelivery?.status === "FAILED") { setNotice(""); setError(`Invoice created, but email was not sent: ${result.emailDelivery.error}`); } }
-  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { const values = formValues(event); const result = await api("/invoices", { method: "POST", body: JSON.stringify({ patientName: values.patientName, patientEmail: values.patientEmail, patientPhone: values.patientPhone, title: values.title, dueAt: values.dueAt, status: "UNPAID", discountAmount: values.discountAmount || "0", items: [{ description: values.description, quantity: values.quantity, unitPrice: values.unitPrice, vatPercent: values.vatPercent || "0" }] }) }); form.reset(); deliveryMessage(result); await resource.load(); } catch (reason) { setNotice(""); setError(reason instanceof Error ? reason.message : "Invoice failed"); } }
   async function pay(row: Row) { try { if (!gateway?.ready) throw new Error("SSLCOMMERZ sandbox is not configured on the backend."); const result = await api(`/payments/checkout/${row._id}`, { method: "POST", body: JSON.stringify({ method: paymentMethod }) }); if (!result.redirectUrl) throw new Error("The payment provider did not return a checkout link"); location.href = result.redirectUrl; } catch (reason) { setNotice(""); setError(reason instanceof Error ? reason.message : "Checkout failed"); } }
   async function updateRecipient(row: Row) { const patientName = window.prompt("Patient name", row.patientName ?? ""); const patientEmail = window.prompt("Patient email", row.patientEmail ?? ""); const patientPhone = window.prompt("Patient phone", row.patientPhone ?? ""); if (!patientName || !patientEmail || !patientPhone) return; try { const result = await api(`/invoices/${row._id}/recipient`, { method: "PATCH", body: JSON.stringify({ patientName, patientEmail, patientPhone }) }); deliveryMessage(result); await resource.load(); } catch (reason) { setNotice(""); setError(reason instanceof Error ? reason.message : "Recipient update failed"); } }
   async function consolidate(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { const result = await api("/invoices/from-encounter", { method: "POST", body: JSON.stringify(formValues(event)) }); form.reset(); setEncounterRecipient({ patientName: "", patientEmail: "", patientPhone: "" }); deliveryMessage(result); await resource.load(); } catch (reason) { setNotice(""); setError(reason instanceof Error ? reason.message : "Consolidation failed"); } }
@@ -216,7 +321,7 @@ function InvoicesPage({ api, token, canCreate, canPay }: { api: Api; token: stri
   return <>
     {canCreate && <>
       <section className="panel-card"><h2>Consolidate encounter charges</h2><p>Selecting an encounter fills the recipient from the patient record. Verify the details before issuing.</p><form className="inline-form" onSubmit={consolidate}><select name="encounterId" onChange={(event) => chooseEncounter(event.target.value)} required><option value="">Encounter</option>{encounters.rows.map((row) => <option key={row._id} value={row._id}>{row.encounterNo} - {row.patient?.fullName}</option>)}</select><input name="patientName" placeholder="Patient name" value={encounterRecipient.patientName} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientName: event.target.value }))} required /><input name="patientEmail" type="email" placeholder="Patient email" value={encounterRecipient.patientEmail} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientEmail: event.target.value }))} required /><input name="patientPhone" type="tel" placeholder="Patient phone" value={encounterRecipient.patientPhone} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientPhone: event.target.value }))} required /><input name="title" placeholder="Invoice title" required /><input name="dueAt" type="date" required /><button className="primary">Create and email invoice</button></form></section>
-      <section className="panel-card"><h2>Create manual invoice</h2><p>The invoice PDF will be emailed automatically to the address below.</p><form className="inline-form" onSubmit={create}><input name="patientName" placeholder="Patient name" required /><input name="patientEmail" type="email" placeholder="Patient email" required /><input name="patientPhone" type="tel" placeholder="Patient phone" required /><input name="title" placeholder="Invoice title" required /><input name="dueAt" type="date" required /><input name="description" placeholder="Line description" required /><input name="quantity" type="number" min="0.01" step="0.01" defaultValue="1" required /><input name="unitPrice" type="number" min="0.01" step="0.01" placeholder="Unit price" required /><input name="vatPercent" type="number" min="0" step="0.01" placeholder="VAT %" /><input name="discountAmount" type="number" min="0" step="0.01" placeholder="Discount" /><button className="primary">Issue and email invoice</button></form></section>
+      <GuidedInvoiceBuilder api={api} canUseCatalog={canUseCatalog} onCreated={(result) => { deliveryMessage(result); void resource.load(); }} onError={(message) => { setNotice(""); setError(message); }} />
     </>}
     {canPay && <section className="panel-card"><h2>Online payment method</h2><form className="inline-form"><label>Method<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="SSLCOMMERZ">SSLCOMMERZ hosted checkout</option><option value="BANGLA_QR">Bangla QR</option></select></label><p>{gateway?.ready ? `Gateway ready (${gateway.mode.toLowerCase()} mode).` : gateway ? "Gateway is not configured." : "Checking gateway…"}</p></form></section>}
     {notice && <div className="success" role="status">{notice}</div>}{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} />
