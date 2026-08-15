@@ -71,6 +71,7 @@ CLIENT_ORIGIN=https://your-vercel-project.vercel.app
 SERVER_URL=https://your-render-service.onrender.com
 RESEND_API_KEY=re_...
 PASSWORD_RESET_FROM=Hospital Billing <noreply@your-verified-domain.com>
+INVOICE_FROM=Hospital Billing <billing@your-verified-domain.com>
 PASSWORD_RESET_TTL_MINUTES=20
 SSLCOMMERZ_STORE_ID=
 SSLCOMMERZ_STORE_PASSWORD=
@@ -86,6 +87,17 @@ VITE_API_URL=https://your-render-service.onrender.com
 Never put MongoDB, Resend, JWT, or gateway credentials in Vercel frontend
 variables. Configure SSLCOMMERZ's IPN listener to
 `https://your-render-service.onrender.com/api/payments/sslcommerz/ipn`.
+The success, failure, and cancellation callback URLs are generated from
+`SERVER_URL`; do not use SSLCOMMERZ's own domain for those callbacks. For the
+academic sandbox, keep `SSLCOMMERZ_SANDBOX=true` and use sandbox credentials.
+Resend must use a sender on a verified domain to email arbitrary patient
+addresses. `INVOICE_FROM` falls back to `PASSWORD_RESET_FROM` when omitted.
+
+New invoices snapshot the patient's name, email, and phone, attach the generated
+PDF, and record `SENT` or `FAILED` delivery status. SSLCOMMERZ hosted checkout
+supports the merchant account's enabled cards, mobile banking, and internet
+banking. The separate Bangla QR choice is shown only as an integration option;
+checkout returns a clear error if Bangla QR is not enabled for that merchant.
 
 ## API surface
 

@@ -16,6 +16,7 @@ interface SessionResponse {
   sessionkey?: string;
   GatewayPageURL?: string;
   BQRPaymentURL?: string;
+  desc?: Array<{ name?: string; gw?: string; redirectGatewayURL?: string }>;
 }
 
 interface ValidationResponse {
@@ -75,7 +76,7 @@ export async function createSslCommerzSession(input: CheckoutInput) {
   return {
     sessionKey: payload.sessionkey,
     checkoutUrl: payload.GatewayPageURL,
-    banglaQrUrl: payload.BQRPaymentURL || ""
+    banglaQrUrl: payload.BQRPaymentURL || payload.desc?.find((gateway) => /bangla\s*qr|bqr/i.test(`${gateway.name ?? ""} ${gateway.gw ?? ""}`))?.redirectGatewayURL || ""
   };
 }
 

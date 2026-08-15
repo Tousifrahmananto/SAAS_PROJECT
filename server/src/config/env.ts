@@ -11,6 +11,7 @@ const schema = z.object({
   SERVER_URL: z.string().url().transform((value) => value.replace(/\/$/, "")).default("http://localhost:4000"),
   RESEND_API_KEY: z.string().min(1).optional(),
   PASSWORD_RESET_FROM: z.string().min(3).optional(),
+  INVOICE_FROM: z.string().min(3).optional(),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(20),
   SSLCOMMERZ_STORE_ID: z.string().min(1).optional(),
   SSLCOMMERZ_STORE_PASSWORD: z.string().min(1).optional(),

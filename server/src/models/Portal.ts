@@ -87,6 +87,9 @@ const invoiceSchema = new Schema({
   ...tenantFields,
   invoiceNo: { type: String, required: true },
   title: { type: String, required: true, trim: true },
+  patientName: { type: String, required: true, trim: true },
+  patientEmail: { type: String, required: true, lowercase: true, trim: true },
+  patientPhone: { type: String, required: true, trim: true },
   items: { type: [invoiceItemSchema], validate: [(value: unknown[]) => value.length > 0, "At least one invoice item is required"] },
   status: { type: String, enum: ["DRAFT", "UNPAID", "PAID", "OVERDUE", "CANCELLED"], default: "DRAFT", index: true },
   subtotal: { type: Schema.Types.Decimal128, required: true },
@@ -97,6 +100,10 @@ const invoiceSchema = new Schema({
   dueAmount: { type: Schema.Types.Decimal128, required: true },
   dueAt: { type: Date, required: true },
   issuedAt: { type: Date, default: null },
+  emailDeliveryStatus: { type: String, enum: ["NOT_SENT", "SENT", "FAILED"], default: "NOT_SENT" },
+  emailSentAt: { type: Date, default: null },
+  emailMessageId: { type: String, default: "" },
+  emailDeliveryError: { type: String, default: "" },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true }
 }, { timestamps: true });
 invoiceSchema.index({ hospital: 1, invoiceNo: 1 }, { unique: true });

@@ -23,6 +23,8 @@ services:
         sync: false
       - key: PASSWORD_RESET_FROM
         sync: false
+      - key: INVOICE_FROM
+        sync: false
       - key: SSLCOMMERZ_STORE_ID
         sync: false
       - key: SSLCOMMERZ_STORE_PASSWORD

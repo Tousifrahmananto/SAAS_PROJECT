@@ -6,6 +6,7 @@ import { z } from "zod";
 import { env } from "../config/env.js";
 import { writeAudit } from "../lib/audit.js";
 import { AppError } from "../lib/errors.js";
+import { invoiceEmailConfigured, sendInvoiceEmail } from "../lib/invoiceEmail.js";
 import { createInvoicePdf, createReceiptPdf } from "../lib/pdf.js";
 import {
   createSslCommerzSession,
@@ -19,10 +20,14 @@ import { Hospital } from "../models/Hospital.js";
 import { Charge } from "../models/Charge.js";
 import { Encounter } from "../models/Encounter.js";
 import { Invoice, Notification, Payment, ReconciliationBatch, Refund } from "../models/Portal.js";
-import { User } from "../models/User.js";
 
 const objectId = z.string().regex(/^[a-f0-9]{24}$/i);
 const money = z.coerce.string().regex(/^\d+(\.\d{1,2})?$/).refine((value) => new Decimal(value).greaterThan(0), "Amount must be positive");
+const invoiceRecipientFields = {
+  patientName: z.string().trim().min(2).max(160),
+  patientEmail: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
+  patientPhone: z.string().trim().min(7).max(30)
+};
 
 function decimal(value: unknown) {
   return new Decimal(String(value ?? "0"));
@@ -30,6 +35,62 @@ function decimal(value: unknown) {
 
 function transactionId(prefix: string) {
   return `${prefix}-${Date.now()}-${randomBytes(4).toString("hex")}`;
+}
+
+function invoicePdfInput(invoice: any, hospital: any) {
+  return {
+    hospitalName: hospital.name,
+    hospitalAddress: hospital.address,
+    invoiceNo: invoice.invoiceNo,
+    title: invoice.title,
+    patientName: invoice.patientName || "Not recorded",
+    patientEmail: invoice.patientEmail || "Not recorded",
+    patientPhone: invoice.patientPhone || "Not recorded",
+    status: invoice.status,
+    dueAt: invoice.dueAt,
+    items: invoice.items.map((item: any) => ({
+      description: item.description,
+      quantity: item.quantity.toString(),
+      unitPrice: item.unitPrice.toString(),
+      vatAmount: item.vatAmount.toString(),
+      lineTotal: item.lineTotal.toString()
+    })),
+    subtotal: invoice.subtotal.toString(),
+    discountAmount: invoice.discountAmount.toString(),
+    vatAmount: invoice.vatAmount.toString(),
+    totalAmount: invoice.totalAmount.toString(),
+    paidAmount: invoice.paidAmount.toString(),
+    dueAmount: invoice.dueAmount.toString()
+  };
+}
+
+async function deliverInvoice(invoice: any) {
+  const hospital = await Hospital.findById(invoice.hospital).lean();
+  if (!hospital) return { status: "FAILED" as const, error: "Hospital not found" };
+  if (!invoiceEmailConfigured()) {
+    const error = "Invoice email is not configured";
+    await Invoice.findByIdAndUpdate(invoice._id, { $set: { emailDeliveryStatus: "FAILED", emailDeliveryError: error } });
+    return { status: "FAILED" as const, error };
+  }
+  try {
+    const pdf = await createInvoicePdf(invoicePdfInput(invoice, hospital));
+    const messageId = await sendInvoiceEmail({
+      invoiceId: invoice._id.toString(),
+      invoiceNo: invoice.invoiceNo,
+      hospitalName: hospital.name,
+      patientName: invoice.patientName,
+      patientEmail: invoice.patientEmail,
+      dueAmount: invoice.dueAmount.toString(),
+      dueAt: invoice.dueAt,
+      pdf
+    });
+    await Invoice.findByIdAndUpdate(invoice._id, { $set: { emailDeliveryStatus: "SENT", emailSentAt: new Date(), emailMessageId: messageId, emailDeliveryError: "" } });
+    return { status: "SENT" as const, messageId };
+  } catch (reason) {
+    const error = (reason instanceof Error ? reason.message : "Invoice email delivery failed").slice(0, 500);
+    await Invoice.findByIdAndUpdate(invoice._id, { $set: { emailDeliveryStatus: "FAILED", emailDeliveryError: error } });
+    return { status: "FAILED" as const, error };
+  }
 }
 
 async function settlePayment(paymentId: string, details: { validationId?: string; bankTransactionId?: string } = {}) {
@@ -78,7 +139,7 @@ invoiceRouter.get("/", requirePermission("invoices:read"), async (req, res, next
 });
 invoiceRouter.post("/from-encounter", requireRole("PROVIDER_OWNER", "BILLING_ADMIN", "ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
   try {
-    const input = z.object({ encounterId: objectId, title: z.string().trim().min(2).max(180), dueAt: z.coerce.date() }).strict().parse(req.body);
+    const input = z.object({ encounterId: objectId, title: z.string().trim().min(2).max(180), dueAt: z.coerce.date(), ...invoiceRecipientFields }).strict().parse(req.body);
     const encounter = await Encounter.findOne({ _id: input.encounterId, hospital: req.auth!.hospitalId }).lean();
     if (!encounter) throw new AppError(404, "Encounter not found", "ENCOUNTER_NOT_FOUND");
     const charges = await Charge.find({ hospital: req.auth!.hospitalId, encounter: encounter._id, status: "POSTED", invoice: null }).populate("service", "name").lean();
@@ -105,6 +166,9 @@ invoiceRouter.post("/from-encounter", requireRole("PROVIDER_OWNER", "BILLING_ADM
           hospital: req.auth!.hospitalId,
           invoiceNo: `INV-${new Date().getFullYear()}-${String(sequence).padStart(6, "0")}`,
           title: input.title,
+          patientName: input.patientName,
+          patientEmail: input.patientEmail,
+          patientPhone: input.patientPhone,
           dueAt: input.dueAt,
           status: "UNPAID",
           issuedAt: new Date(),
@@ -130,13 +194,15 @@ invoiceRouter.post("/from-encounter", requireRole("PROVIDER_OWNER", "BILLING_ADM
     if (!invoice) throw new AppError(500, "Invoice creation failed", "INVOICE_CREATION_FAILED");
     await Notification.create({ hospital: req.auth!.hospitalId, type: "INVOICE", title: "New consolidated invoice", message: `${invoice.invoiceNo} - ${input.title}`, link: "invoices" });
     await writeAudit(req, "CONSOLIDATED_INVOICE_CREATED", "Invoice", invoice._id, invoice.toObject());
-    res.status(201).json({ data: invoice });
+    const emailDelivery = await deliverInvoice(invoice);
+    res.status(201).json({ data: await Invoice.findById(invoice._id), emailDelivery });
   } catch (error) { next(error); }
 });
 invoiceRouter.post("/", requireRole("PROVIDER_OWNER", "BILLING_ADMIN", "ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
   try {
     const input = z.object({
       title: z.string().trim().min(2).max(180),
+      ...invoiceRecipientFields,
       dueAt: z.coerce.date(),
       status: z.enum(["DRAFT", "UNPAID"]).default("UNPAID"),
       discountAmount: z.coerce.string().regex(/^\d+(\.\d{1,2})?$/).default("0"),
@@ -169,6 +235,9 @@ invoiceRouter.post("/", requireRole("PROVIDER_OWNER", "BILLING_ADMIN", "ADMIN", 
       hospital: req.auth!.hospitalId,
       invoiceNo: `INV-${new Date().getFullYear()}-${String(sequence).padStart(6, "0")}`,
       title: input.title,
+      patientName: input.patientName,
+      patientEmail: input.patientEmail,
+      patientPhone: input.patientPhone,
       dueAt: input.dueAt,
       status: input.status,
       issuedAt: input.status === "UNPAID" ? new Date() : null,
@@ -183,7 +252,8 @@ invoiceRouter.post("/", requireRole("PROVIDER_OWNER", "BILLING_ADMIN", "ADMIN", 
     });
     await Notification.create({ hospital: req.auth!.hospitalId, type: "INVOICE", title: "New invoice", message: `${invoice.invoiceNo} - ${input.title}`, link: "invoices" });
     await writeAudit(req, "INVOICE_CREATED", "Invoice", invoice._id, invoice.toObject());
-    res.status(201).json({ data: invoice });
+    const emailDelivery = input.status === "UNPAID" ? await deliverInvoice(invoice) : { status: "NOT_SENT" as const };
+    res.status(201).json({ data: await Invoice.findById(invoice._id), emailDelivery });
   } catch (error) { next(error); }
 });
 invoiceRouter.patch("/:invoiceId/status", requireRole("PROVIDER_OWNER", "BILLING_ADMIN", "ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
@@ -195,7 +265,20 @@ invoiceRouter.patch("/:invoiceId/status", requireRole("PROVIDER_OWNER", "BILLING
     if (!["DRAFT", "UNPAID", "OVERDUE"].includes(before.status)) throw new AppError(409, "Invoice status cannot be changed", "INVALID_INVOICE_STATE");
     const invoice = await Invoice.findByIdAndUpdate(params.invoiceId, { $set: { status: input.status, issuedAt: input.status === "UNPAID" ? new Date() : before.issuedAt } }, { new: true });
     await writeAudit(req, "INVOICE_STATUS_UPDATED", "Invoice", invoice!._id, invoice!.toObject(), before);
-    res.json({ data: invoice });
+    const emailDelivery = input.status === "UNPAID" && before.status === "DRAFT" ? await deliverInvoice(invoice) : undefined;
+    res.json({ data: await Invoice.findById(invoice!._id), ...(emailDelivery ? { emailDelivery } : {}) });
+  } catch (error) { next(error); }
+});
+invoiceRouter.patch("/:invoiceId/recipient", requireRole("PROVIDER_OWNER", "BILLING_ADMIN", "ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
+  try {
+    const params = z.object({ invoiceId: objectId }).parse(req.params);
+    const input = z.object(invoiceRecipientFields).strict().parse(req.body);
+    const before = await Invoice.findOne({ _id: params.invoiceId, hospital: req.auth!.hospitalId }).lean();
+    if (!before) throw new AppError(404, "Invoice not found", "INVOICE_NOT_FOUND");
+    const invoice = await Invoice.findByIdAndUpdate(params.invoiceId, { $set: input }, { new: true });
+    await writeAudit(req, "INVOICE_RECIPIENT_UPDATED", "Invoice", invoice!._id, input, { patientName: before.patientName, patientEmail: before.patientEmail, patientPhone: before.patientPhone });
+    const emailDelivery = ["UNPAID", "OVERDUE"].includes(invoice!.status) ? await deliverInvoice(invoice) : { status: "NOT_SENT" as const };
+    res.json({ data: await Invoice.findById(invoice!._id), emailDelivery });
   } catch (error) { next(error); }
 });
 invoiceRouter.get("/:invoiceId/pdf", requirePermission("invoices:read"), async (req, res, next) => {
@@ -204,16 +287,7 @@ invoiceRouter.get("/:invoiceId/pdf", requirePermission("invoices:read"), async (
     const invoice = await Invoice.findOne({ _id: params.invoiceId, hospital: req.auth!.hospitalId }).lean();
     const hospital = await Hospital.findById(req.auth!.hospitalId).lean();
     if (!invoice || !hospital) throw new AppError(404, "Invoice not found", "INVOICE_NOT_FOUND");
-    const pdf = await createInvoicePdf({
-      hospitalName: hospital.name,
-      hospitalAddress: hospital.address,
-      invoiceNo: invoice.invoiceNo,
-      title: invoice.title,
-      status: invoice.status,
-      dueAt: invoice.dueAt,
-      items: invoice.items.map((item) => ({ description: item.description, quantity: item.quantity.toString(), unitPrice: item.unitPrice.toString(), vatAmount: item.vatAmount.toString(), lineTotal: item.lineTotal.toString() })),
-      subtotal: invoice.subtotal.toString(), discountAmount: invoice.discountAmount.toString(), vatAmount: invoice.vatAmount.toString(), totalAmount: invoice.totalAmount.toString(), paidAmount: invoice.paidAmount.toString(), dueAmount: invoice.dueAmount.toString()
-    });
+    const pdf = await createInvoicePdf(invoicePdfInput(invoice, hospital));
     res.type("application/pdf").attachment(`${invoice.invoiceNo}.pdf`).send(pdf);
   } catch (error) { next(error); }
 });
@@ -248,6 +322,17 @@ for (const outcome of ["success", "fail", "cancel"] as const) {
 }
 
 paymentRouter.use(requireAuth);
+paymentRouter.get("/config", requirePermission("payments:create"), (_req, res) => {
+  const configured = sslCommerzConfigured();
+  res.json({
+    data: {
+      configured,
+      mode: env.SSLCOMMERZ_SANDBOX ? "SANDBOX" : "LIVE",
+      ready: configured,
+      methods: configured ? ["SSLCOMMERZ", "BANGLA_QR"] : []
+    }
+  });
+});
 paymentRouter.get("/", requirePermission("payments:read"), async (req, res, next) => {
   try {
     const payments = await Payment.find({ hospital: req.auth!.hospitalId }).populate("invoice", "invoiceNo title totalAmount dueAmount").sort({ createdAt: -1 }).lean();
@@ -288,47 +373,38 @@ paymentRouter.post("/manual", requireRole("CASHIER", "BILLING_ADMIN", "ADMIN", "
 paymentRouter.post("/checkout/:invoiceId", requirePermission("payments:create"), async (req, res, next) => {
   try {
     const params = z.object({ invoiceId: objectId }).parse(req.params);
+    const input = z.object({ method: z.enum(["SSLCOMMERZ", "BANGLA_QR"]).default("SSLCOMMERZ") }).strict().parse(req.body);
+    if (!sslCommerzConfigured()) throw new AppError(503, "Online payment gateway is not configured", "PAYMENT_GATEWAY_UNAVAILABLE");
     const invoice = await Invoice.findOne({ _id: params.invoiceId, hospital: req.auth!.hospitalId, status: { $in: ["UNPAID", "OVERDUE"] } });
     if (!invoice) throw new AppError(404, "Payable invoice not found", "INVOICE_NOT_FOUND");
-    const user = await User.findById(req.auth!.userId).lean();
+    if (!invoice.patientName || !invoice.patientEmail || !invoice.patientPhone) {
+      throw new AppError(409, "Add the invoice patient name, email, and phone before starting payment", "INVOICE_RECIPIENT_REQUIRED");
+    }
     const hospital = await Hospital.findById(req.auth!.hospitalId).lean();
     const id = transactionId("SSL");
-    const payment = await Payment.create({ hospital: req.auth!.hospitalId, invoice: invoice._id, amount: invoice.dueAmount, method: sslCommerzConfigured() ? "SSLCOMMERZ" : "SANDBOX", transactionId: id, receivedBy: req.auth!.userId });
-    if (!sslCommerzConfigured()) {
-      res.status(201).json({ data: payment, sandbox: true });
-      return;
-    }
+    const payment = await Payment.create({ hospital: req.auth!.hospitalId, invoice: invoice._id, amount: invoice.dueAmount, method: input.method, transactionId: id, receivedBy: req.auth!.userId });
     try {
       const session = await createSslCommerzSession({
         transactionId: id,
         amount: invoice.dueAmount.toString(),
         invoiceNo: invoice.invoiceNo,
-        customerName: user?.fullName ?? hospital?.name ?? "Hospital Customer",
-        customerEmail: user?.email ?? hospital?.email ?? "billing@example.com",
-        customerPhone: user?.phone || hospital?.phone,
+        customerName: invoice.patientName,
+        customerEmail: invoice.patientEmail,
+        customerPhone: invoice.patientPhone,
         customerAddress: hospital?.address
       });
+      const redirectUrl = input.method === "BANGLA_QR" ? session.banglaQrUrl : session.checkoutUrl;
+      if (!redirectUrl) throw new AppError(502, "Bangla QR is not enabled for this SSLCOMMERZ merchant account", "BANGLA_QR_UNAVAILABLE");
       payment.gatewaySession = session.sessionKey;
       await payment.save();
-      await writeAudit(req, "PAYMENT_CHECKOUT_STARTED", "Payment", payment._id, { transactionId: id, invoice: invoice._id });
-      res.status(201).json({ data: payment, checkoutUrl: session.checkoutUrl, banglaQrUrl: session.banglaQrUrl });
+      await writeAudit(req, "PAYMENT_CHECKOUT_STARTED", "Payment", payment._id, { transactionId: id, invoice: invoice._id, method: input.method });
+      res.status(201).json({ data: payment, redirectUrl, checkoutUrl: session.checkoutUrl, banglaQrUrl: session.banglaQrUrl });
     } catch (error) {
       payment.status = "FAILED";
       payment.failureReason = error instanceof Error ? error.message : "Gateway session failed";
       await payment.save();
       throw error;
     }
-  } catch (error) { next(error); }
-});
-paymentRouter.post("/:paymentId/sandbox-complete", requirePermission("payments:create"), async (req, res, next) => {
-  try {
-    const params = z.object({ paymentId: objectId }).parse(req.params);
-    const payment = await Payment.findOne({ _id: params.paymentId, hospital: req.auth!.hospitalId, method: "SANDBOX", status: "INITIATED" });
-    if (!payment) throw new AppError(404, "Sandbox payment not found", "PAYMENT_NOT_FOUND");
-    await settlePayment(payment._id.toString(), { validationId: "SANDBOX" });
-    const settled = await Payment.findById(payment._id);
-    await writeAudit(req, "SANDBOX_PAYMENT_COMPLETED", "Payment", payment._id, settled!.toObject());
-    res.json({ data: settled });
   } catch (error) { next(error); }
 });
 

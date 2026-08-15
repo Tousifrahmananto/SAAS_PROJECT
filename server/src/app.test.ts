@@ -83,6 +83,25 @@ describe("portal authorization", () => {
     expect(response.status).toBe(403);
   });
 
+  it("requires invoice recipient details before database access", async () => {
+    const response = await request(app)
+      .post("/api/invoices")
+      .set("authorization", `Bearer ${token(["BILLING_ADMIN"])}`)
+      .send({ title: "Missing patient", dueAt: "2026-08-31", status: "UNPAID", items: [] });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("reports gateway mode without exposing credentials", async () => {
+    const response = await request(app)
+      .get("/api/payments/config")
+      .set("authorization", `Bearer ${token(["PROVIDER_STAFF"], ["payments:create"])}`);
+    expect(response.status).toBe(200);
+    expect(response.body.data.mode).toMatch(/^(SANDBOX|LIVE)$/);
+    expect(JSON.stringify(response.body)).not.toContain("store_passwd");
+    expect(JSON.stringify(response.body)).not.toContain("STORE_PASSWORD");
+  });
+
   it("rejects reconciliation by non-administrators", async () => {
     const response = await request(app)
       .post("/api/reconciliation")

@@ -5,6 +5,9 @@ interface InvoicePdfInput {
   hospitalAddress?: string;
   invoiceNo: string;
   title: string;
+  patientName: string;
+  patientEmail: string;
+  patientPhone: string;
   status: string;
   dueAt: Date;
   items: Array<{ description: string; quantity: string; unitPrice: string; vatAmount: string; lineTotal: string }>;
@@ -34,6 +37,9 @@ export function createInvoicePdf(input: InvoicePdfInput) {
   doc.fontSize(10).text(`Invoice: ${input.invoiceNo}`, { align: "right" });
   doc.text(`Status: ${input.status}`, { align: "right" });
   doc.text(`Due: ${input.dueAt.toLocaleDateString("en-GB")}`, { align: "right" });
+  doc.moveDown().fontSize(9).fillColor("#526071").text("BILL TO");
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827").text(input.patientName);
+  doc.font("Helvetica").fontSize(9).text(input.patientEmail).text(input.patientPhone);
   doc.moveDown().fontSize(14).text(input.title);
   doc.moveDown();
   const widths = [225, 50, 70, 60, 94];

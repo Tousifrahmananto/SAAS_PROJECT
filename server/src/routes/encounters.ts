@@ -13,7 +13,7 @@ encounterRouter.use(requireAuth);
 encounterRouter.get("/", requirePermission("encounters:read"), async (req, res, next) => {
   try {
     const encounters = await Encounter.find({ hospital: req.auth!.hospitalId })
-      .populate("patient", "patientNo fullName phone")
+      .populate("patient", "patientNo fullName phone email")
       .populate("primaryDepartment", "code name")
       .sort({ openedAt: -1 })
       .limit(100)

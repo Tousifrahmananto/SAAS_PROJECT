@@ -110,6 +110,9 @@ describe("App", () => {
     const form = section.querySelector("form")!;
     const fields = within(section);
     const title = fields.getByPlaceholderText("Invoice title") as HTMLInputElement;
+    fireEvent.change(fields.getByPlaceholderText("Patient name"), { target: { value: "Sample Patient" } });
+    fireEvent.change(fields.getByPlaceholderText("Patient email"), { target: { value: "patient@example.test" } });
+    fireEvent.change(fields.getByPlaceholderText("Patient phone"), { target: { value: "01700000000" } });
     fireEvent.change(title, { target: { value: "Ward charges" } });
     fireEvent.change(form.querySelector('input[name="dueAt"]')!, { target: { value: "2026-08-30" } });
     fireEvent.change(fields.getByPlaceholderText("Line description"), { target: { value: "Consultation" } });
@@ -118,7 +121,11 @@ describe("App", () => {
     fireEvent.submit(form);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/invoices"), expect.objectContaining({ method: "POST" })));
+    const invoiceRequest = fetchMock.mock.calls.find(([input, options]) => String(input).endsWith("/api/invoices") && options?.method === "POST")?.[1];
+    expect(JSON.parse(String(invoiceRequest?.body))).toEqual(expect.objectContaining({ patientName: "Sample Patient", patientEmail: "patient@example.test", patientPhone: "01700000000" }));
     await waitFor(() => expect(title.value).toBe(""));
     expect(screen.queryByText(/Cannot read properties of null/)).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "SSLCOMMERZ hosted checkout" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Bangla QR" })).toBeInTheDocument();
   });
 });
