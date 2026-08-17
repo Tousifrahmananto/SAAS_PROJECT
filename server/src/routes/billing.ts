@@ -60,7 +60,8 @@ function invoicePdfInput(invoice: any, hospital: any) {
     vatAmount: invoice.vatAmount.toString(),
     totalAmount: invoice.totalAmount.toString(),
     paidAmount: invoice.paidAmount.toString(),
-    dueAmount: invoice.dueAmount.toString()
+    dueAmount: invoice.dueAmount.toString(),
+    checkoutUrl: `${env.API_URL}/payments/public/checkout/${invoice._id}`
   };
 }
 
@@ -320,6 +321,47 @@ for (const outcome of ["success", "fail", "cancel"] as const) {
     res.redirect(`${env.CLIENT_ORIGIN}/?payment=${outcome}&transaction=${encodeURIComponent(transaction)}`);
   });
 }
+
+paymentRouter.get("/public/checkout/:invoiceId", async (req, res, next) => {
+  try {
+    const params = z.object({ invoiceId: objectId }).parse(req.params);
+    if (!sslCommerzConfigured()) return next(new AppError(503, "Online payment gateway is not configured", "PAYMENT_GATEWAY_UNAVAILABLE"));
+    const invoice = await Invoice.findOne({ _id: params.invoiceId, status: { $in: ["UNPAID", "OVERDUE"] } });
+    if (!invoice) return next(new AppError(404, "Payable invoice not found", "INVOICE_NOT_FOUND"));
+    if (!invoice.patientName || !invoice.patientEmail || !invoice.patientPhone) {
+      return next(new AppError(409, "Invoice is missing recipient details", "INVOICE_RECIPIENT_REQUIRED"));
+    }
+    const hospital = await Hospital.findById(invoice.hospital).lean();
+    const id = transactionId("SSL");
+    const payment = await Payment.create({
+      hospital: invoice.hospital,
+      invoice: invoice._id,
+      amount: invoice.dueAmount,
+      method: "SSLCOMMERZ",
+      transactionId: id
+    });
+    try {
+      const session = await createSslCommerzSession({
+        transactionId: id,
+        amount: invoice.dueAmount.toString(),
+        invoiceNo: invoice.invoiceNo,
+        customerName: invoice.patientName,
+        customerEmail: invoice.patientEmail,
+        customerPhone: invoice.patientPhone,
+        customerAddress: hospital?.address
+      });
+      payment.gatewaySession = session.sessionKey;
+      await payment.save();
+      await writeAudit(req, "PAYMENT_CHECKOUT_STARTED", "Payment", payment._id, { transactionId: id, invoice: invoice._id, method: "SSLCOMMERZ", isPublic: true });
+      res.redirect(session.checkoutUrl);
+    } catch (error) {
+      payment.status = "FAILED";
+      payment.failureReason = error instanceof Error ? error.message : "Gateway session failed";
+      await payment.save();
+      throw error;
+    }
+  } catch (error) { next(error); }
+});
 
 paymentRouter.use(requireAuth);
 paymentRouter.get("/config", requirePermission("payments:create"), (_req, res) => {

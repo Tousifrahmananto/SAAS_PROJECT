@@ -185,24 +185,6 @@ function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncoun
           </div>
         </form>
       </article>
-      <article className="panel-card">
-        <h2 style={{ marginBottom: "16px" }}>Add service</h2>
-        <form className="profile-form" style={{ marginTop: 0 }} onSubmit={createService}>
-          <label className="wide">Department
-            <select name="departmentId" required>
-              <option value="">Select Department</option>{departments.rows.map((row) => <option key={row._id} value={row._id}>{row.name}</option>)}
-            </select>
-          </label>
-          <label>Code<input name="code" placeholder="Service code" required /></label>
-          <label>Name<input name="name" placeholder="Service name" required /></label>
-          <label className="wide">Category<input name="category" placeholder="Category" required /></label>
-          <label>Price (BDT)<input name="standardPrice" type="number" step="0.01" placeholder="Price" required /></label>
-          <label>VAT %<input name="vatRatePercent" type="number" step="0.01" placeholder="VAT %" /></label>
-          <div className="wide profile-submit" style={{ marginTop: "8px" }}>
-            <button className="primary">Add service</button>
-          </div>
-        </form>
-      </article>
     </section>}
     {canCreateEncounter && <section className="summary-grid">
       <article className="panel-card">
@@ -399,6 +381,7 @@ function numberValue(value: string) {
 
 function GuidedInvoiceBuilder({ api, canUseCatalog, onCreated, onError }: { api: Api; canUseCatalog: boolean; onCreated: (result: any) => void; onError: (message: string) => void }) {
   const catalog = useResource(api, "/catalog/services", canUseCatalog);
+  const departments = useResource(api, "/catalog/departments", canUseCatalog);
   const [lines, setLines] = useState<InvoiceBuilderLine[]>(() => demoInvoiceLines.map((line) => ({ ...line })));
   const [discountAmount, setDiscountAmount] = useState("0");
   const [submitting, setSubmitting] = useState(false);
@@ -465,14 +448,46 @@ function GuidedInvoiceBuilder({ api, canUseCatalog, onCreated, onError }: { api:
     finally { setSubmitting(false); }
   }
 
-  return <section className="panel-card invoice-builder">
-    <div className="invoice-builder-heading"><div><span className="eyebrow">Guided invoice builder</span><h2>Create manual invoice</h2><p>Complete the patient details, tick the charges that apply, adjust days or quantities, then review the total before issuing.</p></div><div className="invoice-builder-total"><small>Invoice total</small><strong>BDT {total.toFixed(2)}</strong><span>{selectedLines.length} charge{selectedLines.length === 1 ? "" : "s"} selected</span></div></div>
-    <form className="invoice-builder-form" onSubmit={createInvoice}>
-      <fieldset><legend>1. Patient and invoice details</legend><div className="invoice-details-grid"><label>Patient name<input name="patientName" placeholder="Example: Rahim Ahmed" required /></label><label>Patient email<input name="patientEmail" type="email" placeholder="patient@example.com" required /></label><label>Patient phone<input name="patientPhone" type="tel" placeholder="01XXXXXXXXX" required /></label><label>Invoice title<input name="title" placeholder="Example: Admission and treatment bill" required /></label><label>Payment due date<input name="dueAt" type="date" required /></label></div></fieldset>
-      <fieldset><legend>2. Select charges and adjust prices</legend><p className="field-help">Demo prices are examples in BDT. Tick only the services the patient received. For hospital stays, enter the number of days as the quantity.</p>{catalog.error && <div className="error">Service catalog could not be loaded: {catalog.error}</div>}<div className="invoice-lines"><div className="invoice-line invoice-line-header"><span>Include</span><span>Charge description</span><span>Unit</span><span>Quantity / days</span><span>Price per unit</span><span>VAT %</span><span>Line total</span></div>{lines.map((line) => { const base = numberValue(line.quantity) * numberValue(line.unitPrice); const lineTotal = base + base * numberValue(line.vatPercent) / 100; return <div className={`invoice-line ${line.selected ? "is-selected" : ""}`} key={line.id}><label className="invoice-check"><input type="checkbox" checked={line.selected} onChange={(event) => updateLine(line.id, { selected: event.target.checked })} aria-label={`Include ${line.description}`} /><span>{line.source === "catalog" ? "Catalog" : "Add"}</span></label><input value={line.description} onChange={(event) => updateLine(line.id, { description: event.target.value })} aria-label={`${line.id} description`} /><select value={line.unitLabel} onChange={(event) => updateLine(line.id, { unitLabel: event.target.value })} aria-label={`${line.id} unit`}><option value="unit">Unit</option><option value="day">Day</option><option value="visit">Visit</option><option value="test">Test</option><option value="procedure">Procedure</option><option value="trip">Trip</option></select><input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} aria-label={`${line.id} quantity or days`} disabled={!line.selected} /><input type="number" min="0.01" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.id, { unitPrice: event.target.value })} aria-label={`${line.id} unit price`} disabled={!line.selected} /><input type="number" min="0" step="0.01" value={line.vatPercent} onChange={(event) => updateLine(line.id, { vatPercent: event.target.value })} aria-label={`${line.id} VAT percent`} disabled={!line.selected} /><strong>BDT {line.selected ? lineTotal.toFixed(2) : "0.00"}</strong></div>; })}</div></fieldset>
-      <fieldset><legend>3. Review and issue</legend><div className="invoice-review"><label>Discount (BDT)<input type="number" min="0" step="0.01" value={discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} /></label><dl><div><dt>Subtotal</dt><dd>BDT {subtotal.toFixed(2)}</dd></div><div><dt>VAT</dt><dd>BDT {vat.toFixed(2)}</dd></div><div><dt>Discount</dt><dd>BDT {numberValue(discountAmount).toFixed(2)}</dd></div><div className="invoice-grand-total"><dt>Total due</dt><dd>BDT {total.toFixed(2)}</dd></div></dl><button className="primary" disabled={submitting || !selectedLines.length}>{submitting ? "Creating invoice..." : "Issue and email invoice"}</button></div></fieldset>
-    </form>
-  </section>;
+  async function createService(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await api("/catalog/services", { method: "POST", body: JSON.stringify(formValues(event)) });
+      event.currentTarget.reset();
+      await catalog.load();
+    } catch (reason) {
+      onError(reason instanceof Error ? reason.message : "Service creation failed");
+    }
+  }
+
+  return <>
+    {canUseCatalog && <section className="panel-card">
+      <h2 style={{ marginBottom: "16px" }}>Add new service to catalog</h2>
+      <p style={{ marginBottom: "16px" }}>Add a service to the catalog to make it available in the invoice builder below.</p>
+      <form className="profile-form" style={{ marginTop: 0 }} onSubmit={createService}>
+        <label className="wide">Department
+          <select name="departmentId" required>
+            <option value="">Select Department</option>{departments.rows.map((row) => <option key={row._id} value={row._id}>{row.name}</option>)}
+          </select>
+        </label>
+        <label>Code<input name="code" placeholder="Service code" required /></label>
+        <label>Name<input name="name" placeholder="Service name" required /></label>
+        <label className="wide">Category<input name="category" placeholder="Category" required /></label>
+        <label>Price (BDT)<input name="standardPrice" type="number" step="0.01" placeholder="Price" required /></label>
+        <label>VAT %<input name="vatRatePercent" type="number" step="0.01" placeholder="VAT %" /></label>
+        <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+          <button className="primary">Add service</button>
+        </div>
+      </form>
+    </section>}
+    <section className="panel-card invoice-builder">
+      <div className="invoice-builder-heading"><div><span className="eyebrow">Guided invoice builder</span><h2>Create manual invoice</h2><p>Complete the patient details, tick the charges that apply, adjust days or quantities, then review the total before issuing.</p></div><div className="invoice-builder-total"><small>Invoice total</small><strong>BDT {total.toFixed(2)}</strong><span>{selectedLines.length} charge{selectedLines.length === 1 ? "" : "s"} selected</span></div></div>
+      <form className="invoice-builder-form" onSubmit={createInvoice}>
+        <fieldset><legend>1. Patient and invoice details</legend><div className="invoice-details-grid"><label>Patient name<input name="patientName" placeholder="Example: Rahim Ahmed" required /></label><label>Patient email<input name="patientEmail" type="email" placeholder="patient@example.com" required /></label><label>Patient phone<input name="patientPhone" type="tel" placeholder="01XXXXXXXXX" required /></label><label>Invoice title<input name="title" placeholder="Example: Admission and treatment bill" required /></label><label>Payment due date<input name="dueAt" type="date" required /></label></div></fieldset>
+        <fieldset><legend>2. Select charges and adjust prices</legend><p className="field-help">Demo prices are examples in BDT. Tick only the services the patient received. For hospital stays, enter the number of days as the quantity.</p>{catalog.error && <div className="error">Service catalog could not be loaded: {catalog.error}</div>}<div className="invoice-lines"><div className="invoice-line invoice-line-header"><span>Include</span><span>Charge description</span><span>Unit</span><span>Quantity / days</span><span>Price per unit</span><span>VAT %</span><span>Line total</span></div>{lines.map((line) => { const base = numberValue(line.quantity) * numberValue(line.unitPrice); const lineTotal = base + base * numberValue(line.vatPercent) / 100; return <div className={`invoice-line ${line.selected ? "is-selected" : ""}`} key={line.id}><label className="invoice-check"><input type="checkbox" checked={line.selected} onChange={(event) => updateLine(line.id, { selected: event.target.checked })} aria-label={`Include ${line.description}`} /><span>{line.source === "catalog" ? "Catalog" : "Add"}</span></label><input value={line.description} onChange={(event) => updateLine(line.id, { description: event.target.value })} aria-label={`${line.id} description`} /><select value={line.unitLabel} onChange={(event) => updateLine(line.id, { unitLabel: event.target.value })} aria-label={`${line.id} unit`}><option value="unit">Unit</option><option value="day">Day</option><option value="visit">Visit</option><option value="test">Test</option><option value="procedure">Procedure</option><option value="trip">Trip</option></select><input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} aria-label={`${line.id} quantity or days`} disabled={!line.selected} /><input type="number" min="0.01" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.id, { unitPrice: event.target.value })} aria-label={`${line.id} unit price`} disabled={!line.selected} /><input type="number" min="0" step="0.01" value={line.vatPercent} onChange={(event) => updateLine(line.id, { vatPercent: event.target.value })} aria-label={`${line.id} VAT percent`} disabled={!line.selected} /><strong>BDT {line.selected ? lineTotal.toFixed(2) : "0.00"}</strong></div>; })}</div></fieldset>
+        <fieldset><legend>3. Review and issue</legend><div className="invoice-review"><label>Discount (BDT)<input type="number" min="0" step="0.01" value={discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} /></label><dl><div><dt>Subtotal</dt><dd>BDT {subtotal.toFixed(2)}</dd></div><div><dt>VAT</dt><dd>BDT {vat.toFixed(2)}</dd></div><div><dt>Discount</dt><dd>BDT {numberValue(discountAmount).toFixed(2)}</dd></div><div className="invoice-grand-total"><dt>Total due</dt><dd>BDT {total.toFixed(2)}</dd></div></dl><button className="primary" disabled={submitting || !selectedLines.length}>{submitting ? "Creating invoice..." : "Issue and email invoice"}</button></div></fieldset>
+      </form>
+    </section>
+  </>;
 }
 
 function InvoicesPage({ api, token, canCreate, canPay, canUseCatalog }: { api: Api; token: string; canCreate: boolean; canPay: boolean; canUseCatalog: boolean }) {
