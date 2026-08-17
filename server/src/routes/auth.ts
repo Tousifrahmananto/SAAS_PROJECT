@@ -183,6 +183,43 @@ authRouter.post("/login", loginLimiter, async (req, res, next) => {
     user.lastLoginAt = new Date();
     await user.save();
     await AuditLog.create({ hospital: user.hospital, actor: user._id, department: user.department, action: "USER_LOGIN", entityType: "User", entityId: user._id, before: null, after: { loggedInAt: user.lastLoginAt }, ipAddress: req.ip, userAgent: req.header("user-agent") ?? "", correlationId: req.correlationId });
+
+    if (user.requiresPasswordChange) {
+      const tempToken = jwt.sign({ intent: "change-password" }, env.JWT_SECRET, { subject: user.id, expiresIn: "15m" });
+      res.json({ requiresPasswordChange: true, tempToken });
+      return;
+    }
+
+    res.json(createSession(user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+authRouter.post("/change-temp-password", loginLimiter, async (req, res, next) => {
+  try {
+    const input = z.object({ tempToken: z.string(), newPassword: z.string().min(12).max(128) }).parse(req.body);
+    let payload;
+    try {
+      payload = jwt.verify(input.tempToken, env.JWT_SECRET) as { sub: string, intent: string };
+    } catch {
+      throw new AppError(401, "Invalid or expired session. Please log in again.", "UNAUTHORIZED");
+    }
+
+    if (payload.intent !== "change-password") {
+      throw new AppError(400, "Invalid token intent.", "INVALID_TOKEN");
+    }
+
+    const user = await User.findById(payload.sub).select("+passwordHash");
+    if (!user || user.status !== "ACTIVE") {
+      throw new AppError(401, "User is not active", "UNAUTHORIZED");
+    }
+
+    user.passwordHash = await bcrypt.hash(input.newPassword, 12);
+    user.requiresPasswordChange = false;
+    await user.save();
+    await AuditLog.create({ hospital: user.hospital, actor: user._id, action: "PASSWORD_CHANGED", entityType: "User", entityId: user._id, before: null, after: null, ipAddress: req.ip, userAgent: req.header("user-agent") ?? "", correlationId: req.correlationId });
+
     res.json(createSession(user));
   } catch (error) {
     next(error);

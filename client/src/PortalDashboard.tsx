@@ -175,8 +175,83 @@ function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncoun
         </div>
       </form>
     </section>}
-    {canManageCatalog && <section className="summary-grid"><article className="panel-card"><h2>Add department</h2><form className="stack-form" onSubmit={createDepartment}><input name="code" placeholder="Code" required /><input name="name" placeholder="Name" required /><input name="type" placeholder="Type" defaultValue="CLINICAL" required /><button className="primary">Add department</button></form></article><article className="panel-card"><h2>Add service</h2><form className="stack-form" onSubmit={createService}><select name="departmentId" required><option value="">Department</option>{departments.rows.map((row) => <option key={row._id} value={row._id}>{row.name}</option>)}</select><input name="code" placeholder="Service code" required /><input name="name" placeholder="Service name" required /><input name="category" placeholder="Category" required /><input name="standardPrice" type="number" step="0.01" placeholder="Price" required /><input name="vatRatePercent" type="number" step="0.01" placeholder="VAT %" /><button className="primary">Add service</button></form></article></section>}
-    {(canCreateEncounter || canCreateCharge) && <section className="summary-grid">{canCreateEncounter && <article className="panel-card"><h2>Open encounter</h2><form className="stack-form" onSubmit={openEncounter}><select name="patientId" required><option value="">Patient</option>{patients.rows.map((row) => <option key={row._id} value={row._id}>{row.patientNo} - {row.fullName}</option>)}</select><select name="primaryDepartmentId" required><option value="">Department</option>{departments.rows.map((row) => <option key={row._id} value={row._id}>{row.name}</option>)}</select><select name="type"><option>OPD</option><option>EMERGENCY</option><option>INPATIENT</option></select><input name="attendingDoctorName" placeholder="Attending doctor" /><button className="primary">Open encounter</button></form></article>}{canCreateCharge && <article className="panel-card"><h2>Post charge</h2><form className="stack-form" onSubmit={addCharge}><select name="encounterId" required><option value="">Open encounter</option>{encounters.rows.filter((row) => row.status === "OPEN").map((row) => <option key={row._id} value={row._id}>{row.encounterNo} - {row.patient?.fullName}</option>)}</select><select name="serviceId" required><option value="">Service</option>{services.rows.map((row) => <option key={row._id} value={row._id}>{row.name} - BDT {decimal(row.standardPrice)}</option>)}</select><input name="quantity" type="number" min="0.01" step="0.01" defaultValue="1" /><input name="sourceReference" placeholder="Reference" /><button className="primary">Post charge</button></form></article>}</section>}
+    {canManageCatalog && <section className="summary-grid">
+      <article className="panel-card">
+        <h2 style={{ marginBottom: "16px" }}>Add department</h2>
+        <form className="profile-form" style={{ marginTop: 0 }} onSubmit={createDepartment}>
+          <label className="wide">Code<input name="code" placeholder="e.g. CARD" required /></label>
+          <label className="wide">Name<input name="name" placeholder="e.g. Cardiology" required /></label>
+          <label className="wide">Type<input name="type" placeholder="Type" defaultValue="CLINICAL" required /></label>
+          <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+            <button className="primary">Add department</button>
+          </div>
+        </form>
+      </article>
+      <article className="panel-card">
+        <h2 style={{ marginBottom: "16px" }}>Add service</h2>
+        <form className="profile-form" style={{ marginTop: 0 }} onSubmit={createService}>
+          <label className="wide">Department
+            <select name="departmentId" required>
+              <option value="">Select Department</option>{departments.rows.map((row) => <option key={row._id} value={row._id}>{row.name}</option>)}
+            </select>
+          </label>
+          <label>Code<input name="code" placeholder="Service code" required /></label>
+          <label>Name<input name="name" placeholder="Service name" required /></label>
+          <label className="wide">Category<input name="category" placeholder="Category" required /></label>
+          <label>Price (BDT)<input name="standardPrice" type="number" step="0.01" placeholder="Price" required /></label>
+          <label>VAT %<input name="vatRatePercent" type="number" step="0.01" placeholder="VAT %" /></label>
+          <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+            <button className="primary">Add service</button>
+          </div>
+        </form>
+      </article>
+    </section>}
+    {(canCreateEncounter || canCreateCharge) && <section className="summary-grid">
+      {canCreateEncounter && <article className="panel-card">
+        <h2 style={{ marginBottom: "16px" }}>Open encounter</h2>
+        <form className="profile-form" style={{ marginTop: 0 }} onSubmit={openEncounter}>
+          <label className="wide">Patient
+            <select name="patientId" required>
+              <option value="">Select Patient</option>{patients.rows.map((row) => <option key={row._id} value={row._id}>{row.patientNo} - {row.fullName}</option>)}
+            </select>
+          </label>
+          <label className="wide">Department
+            <select name="primaryDepartmentId" required>
+              <option value="">Select Department</option>{departments.rows.map((row) => <option key={row._id} value={row._id}>{row.name}</option>)}
+            </select>
+          </label>
+          <label className="wide">Type
+            <select name="type">
+              <option>OPD</option><option>EMERGENCY</option><option>INPATIENT</option>
+            </select>
+          </label>
+          <label className="wide">Attending doctor <span style={{fontWeight: "normal", color: "#667085"}}>(Optional)</span><input name="attendingDoctorName" placeholder="Dr. Name" /></label>
+          <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+            <button className="primary">Open encounter</button>
+          </div>
+        </form>
+      </article>}
+      {canCreateCharge && <article className="panel-card">
+        <h2 style={{ marginBottom: "16px" }}>Post charge</h2>
+        <form className="profile-form" style={{ marginTop: 0 }} onSubmit={addCharge}>
+          <label className="wide">Encounter
+            <select name="encounterId" required>
+              <option value="">Select Open Encounter</option>{encounters.rows.filter((row) => row.status === "OPEN").map((row) => <option key={row._id} value={row._id}>{row.encounterNo} - {row.patient?.fullName}</option>)}
+            </select>
+          </label>
+          <label className="wide">Service
+            <select name="serviceId" required>
+              <option value="">Select Service</option>{services.rows.map((row) => <option key={row._id} value={row._id}>{row.name} - BDT {decimal(row.standardPrice)}</option>)}
+            </select>
+          </label>
+          <label>Quantity<input name="quantity" type="number" min="0.01" step="0.01" defaultValue="1" /></label>
+          <label>Reference <span style={{fontWeight: "normal", color: "#667085"}}>(Optional)</span><input name="sourceReference" placeholder="Ref no." /></label>
+          <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+            <button className="primary">Post charge</button>
+          </div>
+        </form>
+      </article>}
+    </section>}
     <h2>Recent patients</h2><DataTable columns={["patientNo", "fullName", "phone", "dateOfBirth", "sex"]} rows={patients.rows} /><h2>Encounter queue</h2><DataTable columns={["encounterNo", "patient", "primaryDepartment", "type", "status", "openedAt"]} rows={encounters.rows} /><h2>Charge history</h2><DataTable columns={["encounter", "service", "department", "quantity", "netAmount", "status", "occurredAt"]} rows={charges.rows} />
   </>;
 }
@@ -248,28 +323,73 @@ function DocumentsPage({ api, token, canCreate }: { api: Api; token: string; can
   const resource = useResource(api, "/documents"); const [error, setError] = useState("");
   async function upload(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; const values = formValues(event); const file = values.file as File; if (!file?.size) return; setError(""); try { const contentBase64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("Could not read file")); reader.readAsDataURL(file); }); await api("/documents", { method: "POST", body: JSON.stringify({ name: file.name, category: values.category, mimeType: file.type, contentBase64 }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Upload failed"); } }
   async function download(row: Row) { const response = await fetch(`${apiBaseUrl}/api/documents/${row._id}/download`, { headers: { authorization: `Bearer ${token}` } }); if (!response.ok) { setError("Download failed"); return; } const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a"); link.href = url; link.download = row.name; link.click(); URL.revokeObjectURL(url); }
-  return <>{canCreate && <section className="panel-card"><h2>Upload document</h2><form className="inline-form" onSubmit={upload}><input name="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.xlsx" required /><select name="category"><option>IDENTIFICATION</option><option>CONTRACT</option><option>INVOICE</option><option>REPORT</option><option>OTHER</option></select><button className="primary">Upload</button></form>{error && <div className="error">{error}</div>}</section>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["name", "category", "mimeType", "size", "createdAt"]} rows={resource.rows} action={(row) => <button onClick={() => void download(row)}>Download</button>} /></>;
+  return <>{canCreate && <section className="panel-card">
+    <h2 style={{ marginBottom: "16px" }}>Upload document</h2>
+    <form className="profile-form" style={{ marginTop: 0 }} onSubmit={upload}>
+      <label>File<input name="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.xlsx" required /></label>
+      <label>Category
+        <select name="category">
+          <option>IDENTIFICATION</option><option>CONTRACT</option><option>INVOICE</option><option>REPORT</option><option>OTHER</option>
+        </select>
+      </label>
+      <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+        <button className="primary">Upload document</button>
+      </div>
+    </form>
+    {error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}
+  </section>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["name", "category", "mimeType", "size", "createdAt"]} rows={resource.rows} action={(row) => <button onClick={() => void download(row)}>Download</button>} /></>;
 }
 
 function AppointmentsPage({ api, isAdmin, canCreate }: { api: Api; isAdmin: boolean; canCreate: boolean }) {
   const resource = useResource(api, "/appointments"); const [error, setError] = useState("");
   async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { const values = formValues(event); await api("/appointments", { method: "POST", body: JSON.stringify({ ...values, startsAt: new Date(String(values.startsAt)).toISOString(), durationMinutes: Number(values.durationMinutes) }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Booking failed"); } }
   async function decide(id: string, status: string) { try { await api(`/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Update failed"); } }
-  return <>{canCreate && <section className="panel-card"><h2>Book appointment</h2><form className="inline-form" onSubmit={create}><input name="subject" placeholder="Subject" required /><input name="startsAt" type="datetime-local" required /><input name="durationMinutes" type="number" min="15" defaultValue="30" /><input name="description" placeholder="Notes" /><button className="primary">Request</button></form>{error && <div className="error">{error}</div>}</section>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["subject", "startsAt", "durationMinutes", "status", "decisionNote"]} rows={resource.rows} action={isAdmin ? (row) => <span className="row-actions"><button onClick={() => void decide(row._id, "APPROVED")}>Approve</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></span> : undefined} /></>;
+  return <>{canCreate && <section className="panel-card">
+    <h2 style={{ marginBottom: "16px" }}>Book appointment</h2>
+    <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
+      <label>Subject<input name="subject" placeholder="e.g. Initial Consultation" required /></label>
+      <label>Date & Time<input name="startsAt" type="datetime-local" required /></label>
+      <label>Duration (minutes)<input name="durationMinutes" type="number" min="15" defaultValue="30" /></label>
+      <label>Notes <span style={{fontWeight: "normal", color: "#667085"}}>(Optional)</span><input name="description" placeholder="Any special requests" /></label>
+      <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+        <button className="primary">Request appointment</button>
+      </div>
+    </form>
+    {error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}
+  </section>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["subject", "startsAt", "durationMinutes", "status", "decisionNote"]} rows={resource.rows} action={isAdmin ? (row) => <span className="row-actions"><button onClick={() => void decide(row._id, "APPROVED")}>Approve</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></span> : undefined} /></>;
 }
 
 function MessagesPage({ api, canCreate }: { api: Api; canCreate: boolean }) {
   const resource = useResource(api, "/messages"); const [error, setError] = useState("");
   async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { await api("/messages", { method: "POST", body: JSON.stringify(formValues(event)) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Message failed"); } }
   async function reply(row: Row) { const body = window.prompt("Reply"); if (!body) return; await api(`/messages/${row._id}/replies`, { method: "POST", body: JSON.stringify({ body }) }); await resource.load(); }
-  return <>{canCreate && <section className="panel-card"><h2>Contact billing support</h2><form className="stack-form" onSubmit={create}><input name="subject" placeholder="Subject" required /><textarea name="body" placeholder="Message" required /><button className="primary">Start conversation</button></form>{error && <div className="error">{error}</div>}</section>}<PageState busy={resource.busy} error={resource.error} /><div className="card-list">{resource.rows.map((row) => <article className="resource-card" key={row._id}><span className="status-badge">{row.status}</span><h3>{row.subject}</h3><div className="message-history">{row.messages?.map((message: Row) => <p key={message._id}><strong>{message.sender?.fullName ?? "User"}:</strong> {message.body}</p>)}</div>{canCreate && <button onClick={() => void reply(row)}>Reply</button>}</article>)}</div></>;
+  return <>{canCreate && <section className="panel-card">
+    <h2 style={{ marginBottom: "16px" }}>Contact billing support</h2>
+    <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
+      <label className="wide">Subject<input name="subject" placeholder="What do you need help with?" required /></label>
+      <label className="wide">Message<textarea name="body" placeholder="Describe your issue in detail..." rows={4} required /></label>
+      <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+        <button className="primary">Start conversation</button>
+      </div>
+    </form>
+    {error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}
+  </section>}<PageState busy={resource.busy} error={resource.error} /><div className="card-list">{resource.rows.map((row) => <article className="resource-card" key={row._id}><span className="status-badge">{row.status}</span><h3>{row.subject}</h3><div className="message-history">{row.messages?.map((message: Row) => <p key={message._id}><strong>{message.sender?.fullName ?? "User"}:</strong> {message.body}</p>)}</div>{canCreate && <button onClick={() => void reply(row)}>Reply</button>}</article>)}</div></>;
 }
 
 function ContractsPage({ api, isAdmin, canSign }: { api: Api; isAdmin: boolean; canSign: boolean }) {
   const resource = useResource(api, "/contracts"); const [error, setError] = useState("");
   async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { await api("/contracts", { method: "POST", body: JSON.stringify(formValues(event)) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Create failed"); } }
   async function decide(id: string, decision: string) { const signerName = decision === "ACCEPTED" ? window.prompt("Type the signer's full name") : undefined; const rejectionReason = decision === "REJECTED" ? window.prompt("Reason for rejection") : undefined; if (decision === "ACCEPTED" && !signerName || decision === "REJECTED" && !rejectionReason) return; await api(`/contracts/${id}/decision`, { method: "PATCH", body: JSON.stringify(decision === "ACCEPTED" ? { decision, signerName, signatureDataUrl: "" } : { decision, rejectionReason }) }); await resource.load(); }
-  return <>{isAdmin && <section className="panel-card"><h2>Create agreement</h2><form className="stack-form" onSubmit={create}><input name="title" placeholder="Contract title" required /><textarea name="body" placeholder="Agreement terms" minLength={20} required /><button className="primary">Publish for signature</button></form></section>}{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} />{!resource.busy && !resource.error && !resource.rows.length ? <div className="empty-state">No agreements yet.</div> : <div className="card-list">{resource.rows.map((row) => <article className="resource-card" key={row._id}><span className="status-badge">{row.status}</span><h3>{row.title}</h3><p>{row.body}</p>{row.status === "PENDING" && canSign && !isAdmin && <div className="row-actions"><button className="primary" onClick={() => void decide(row._id, "ACCEPTED")}>Accept & sign</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></div>}</article>)}</div>}</>;
+  return <>{isAdmin && <section className="panel-card">
+    <h2 style={{ marginBottom: "16px" }}>Create agreement</h2>
+    <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
+      <label className="wide">Contract title<input name="title" placeholder="e.g. Master Service Agreement 2026" required /></label>
+      <label className="wide">Agreement terms<textarea name="body" placeholder="Enter the full legal terms of the agreement here..." minLength={20} rows={8} required /></label>
+      <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+        <button className="primary">Publish for signature</button>
+      </div>
+    </form>
+  </section>}{error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}<PageState busy={resource.busy} error={resource.error} />{!resource.busy && !resource.error && !resource.rows.length ? <div className="empty-state">No agreements yet.</div> : <div className="card-list">{resource.rows.map((row) => <article className="resource-card" key={row._id}><span className="status-badge">{row.status}</span><h3>{row.title}</h3><p>{row.body}</p>{row.status === "PENDING" && canSign && !isAdmin && <div className="row-actions"><button className="primary" onClick={() => void decide(row._id, "ACCEPTED")}>Accept & sign</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></div>}</article>)}</div>}</>;
 }
 
 type InvoiceBuilderLine = {
@@ -390,7 +510,25 @@ function InvoicesPage({ api, token, canCreate, canPay, canUseCatalog }: { api: A
   function chooseEncounter(id: string) { const patient = encounters.rows.find((row) => row._id === id)?.patient; setEncounterRecipient({ patientName: patient?.fullName ?? "", patientEmail: patient?.email ?? "", patientPhone: patient?.phone ?? "" }); }
   return <>
     {canCreate && <>
-      <section className="panel-card"><h2>Consolidate encounter charges</h2><p>Selecting an encounter fills the recipient from the patient record. Verify the details before issuing.</p><form className="inline-form" onSubmit={consolidate}><select name="encounterId" onChange={(event) => chooseEncounter(event.target.value)} required><option value="">Encounter</option>{encounters.rows.map((row) => <option key={row._id} value={row._id}>{row.encounterNo} - {row.patient?.fullName}</option>)}</select><input name="patientName" placeholder="Patient name" value={encounterRecipient.patientName} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientName: event.target.value }))} required /><input name="patientEmail" type="email" placeholder="Patient email" value={encounterRecipient.patientEmail} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientEmail: event.target.value }))} required /><input name="patientPhone" type="tel" placeholder="Patient phone" value={encounterRecipient.patientPhone} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientPhone: event.target.value }))} required /><input name="title" placeholder="Invoice title" required /><input name="dueAt" type="date" required /><button className="primary">Create and email invoice</button></form></section>
+      <section className="panel-card">
+        <h2 style={{ marginBottom: "16px" }}>Consolidate encounter charges</h2>
+        <p style={{ marginBottom: "16px" }}>Selecting an encounter fills the recipient from the patient record. Verify the details before issuing.</p>
+        <form className="profile-form" style={{ marginTop: 0 }} onSubmit={consolidate}>
+          <label>Encounter
+            <select name="encounterId" onChange={(event) => chooseEncounter(event.target.value)} required>
+              <option value="">Select Encounter</option>{encounters.rows.map((row) => <option key={row._id} value={row._id}>{row.encounterNo} - {row.patient?.fullName}</option>)}
+            </select>
+          </label>
+          <label>Patient name<input name="patientName" placeholder="Patient name" value={encounterRecipient.patientName} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientName: event.target.value }))} required /></label>
+          <label>Patient email<input name="patientEmail" type="email" placeholder="Patient email" value={encounterRecipient.patientEmail} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientEmail: event.target.value }))} required /></label>
+          <label>Patient phone<input name="patientPhone" type="tel" placeholder="Patient phone" value={encounterRecipient.patientPhone} onChange={(event) => setEncounterRecipient((current) => ({ ...current, patientPhone: event.target.value }))} required /></label>
+          <label>Invoice title<input name="title" placeholder="e.g. Admission and treatment bill" required /></label>
+          <label>Payment due date<input name="dueAt" type="date" required /></label>
+          <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+            <button className="primary">Create and email invoice</button>
+          </div>
+        </form>
+      </section>
       <GuidedInvoiceBuilder api={api} canUseCatalog={canUseCatalog} onCreated={(result) => { deliveryMessage(result); void resource.load(); }} onError={(message) => { setNotice(""); setError(message); }} />
     </>}
     {canPay && <section className="panel-card"><h2>Online payment method</h2><form className="inline-form"><label>Method<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="SSLCOMMERZ">SSLCOMMERZ hosted checkout</option><option value="BANGLA_QR">Bangla QR</option></select></label><p>{gateway?.ready ? `Gateway ready (${gateway.mode.toLowerCase()} mode).` : gateway ? "Gateway is not configured." : "Checking gateway…"}</p></form></section>}
@@ -404,20 +542,59 @@ function PaymentsPage({ api, token, isAdmin, canRefund }: { api: Api; token: str
   async function requestRefund(row: Row) { const amount = window.prompt("Refund amount", decimal(row.amount)); const reason = window.prompt("Refund reason"); if (!amount || !reason) return; try { await api("/refunds", { method: "POST", body: JSON.stringify({ paymentId: row._id, amount, reason }) }); await refunds.load(); } catch (reasonValue) { setError(reasonValue instanceof Error ? reasonValue.message : "Refund failed"); } }
   async function approveRefund(row: Row) { if (!window.confirm(`Approve refund of BDT ${decimal(row.amount)}?`)) return; try { await api(`/refunds/${row._id}/approve`, { method: "PATCH", body: "{}" }); await Promise.all([refunds.load(), payments.load()]); } catch (reason) { setError(reason instanceof Error ? reason.message : "Refund approval failed"); } }
   async function reconcile(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { await api("/reconciliation", { method: "POST", body: JSON.stringify(formValues(event)) }); form.reset(); await reconciliation.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Reconciliation failed"); } }
-  return <>{error && <div className="error">{error}</div>}<h2>Payment history</h2><PageState busy={payments.busy} error={payments.error} /><DataTable columns={["transactionId", "amount", "method", "status", "paidAt"]} rows={payments.rows} action={(row) => <span className="row-actions">{["PAID", "PARTIALLY_REFUNDED", "REFUNDED"].includes(row.status) && <button onClick={() => void downloadAuthenticated(`/payments/${row._id}/receipt.pdf`, `receipt-${row.transactionId}.pdf`, token)}>Receipt</button>}{canRefund && row.status === "PAID" && <button onClick={() => void requestRefund(row)}>Request refund</button>}</span>} /><h2>Refunds</h2><DataTable columns={["amount", "reason", "status", "createdAt"]} rows={refunds.rows} action={isAdmin ? (row) => row.status === "REQUESTED" ? <button className="primary" onClick={() => void approveRefund(row)}>Approve refund</button> : null : undefined} />{isAdmin && <><section className="panel-card"><h2>Reconcile settlement</h2><form className="inline-form" onSubmit={reconcile}><input name="businessDate" type="date" required /><input name="externalReference" placeholder="Settlement reference" required /><input name="expectedAmount" type="number" step="0.01" placeholder="Expected" required /><input name="settledAmount" type="number" step="0.01" placeholder="Settled" required /><input name="note" placeholder="Note" /><button className="primary">Reconcile</button></form></section><DataTable columns={["businessDate", "externalReference", "expectedAmount", "settledAmount", "varianceAmount", "status"]} rows={reconciliation.rows} /></>}</>;
+  return <>{error && <div className="error" style={{ marginBottom: "16px" }}>{error}</div>}<h2>Payment history</h2><PageState busy={payments.busy} error={payments.error} /><DataTable columns={["transactionId", "amount", "method", "status", "paidAt"]} rows={payments.rows} action={(row) => <span className="row-actions">{["PAID", "PARTIALLY_REFUNDED", "REFUNDED"].includes(row.status) && <button onClick={() => void downloadAuthenticated(`/payments/${row._id}/receipt.pdf`, `receipt-${row.transactionId}.pdf`, token)}>Receipt</button>}{canRefund && row.status === "PAID" && <button onClick={() => void requestRefund(row)}>Request refund</button>}</span>} /><h2>Refunds</h2><DataTable columns={["amount", "reason", "status", "createdAt"]} rows={refunds.rows} action={isAdmin ? (row) => row.status === "REQUESTED" ? <button className="primary" onClick={() => void approveRefund(row)}>Approve refund</button> : null : undefined} />{isAdmin && <><section className="panel-card">
+    <h2 style={{ marginBottom: "16px" }}>Reconcile settlement</h2>
+    <form className="profile-form" style={{ marginTop: 0 }} onSubmit={reconcile}>
+      <label>Business date<input name="businessDate" type="date" required /></label>
+      <label>External reference<input name="externalReference" placeholder="Settlement reference" required /></label>
+      <label>Expected amount<input name="expectedAmount" type="number" step="0.01" placeholder="Expected amount" required /></label>
+      <label>Settled amount<input name="settledAmount" type="number" step="0.01" placeholder="Settled amount" required /></label>
+      <label className="wide">Note<input name="note" placeholder="Any additional notes" /></label>
+      <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+        <button className="primary">Reconcile</button>
+      </div>
+    </form>
+  </section><DataTable columns={["businessDate", "externalReference", "expectedAmount", "settledAmount", "varianceAmount", "status"]} rows={reconciliation.rows} /></>}</>;
 }
 
 function ReportsPage({ api, isAdmin }: { api: Api; isAdmin: boolean }) {
   const resource = useResource(api, "/reports"); const [error, setError] = useState("");
   async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { await api("/reports", { method: "POST", body: JSON.stringify(formValues(event)) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Report failed"); } }
-  return <>{isAdmin && <section className="panel-card"><h2>Publish report</h2><form className="inline-form" onSubmit={create}><input name="title" placeholder="Report title" required /><select name="reportType"><option>MONTHLY_BILLING</option><option>FINANCIAL</option><option>CLAIMS</option><option>CUSTOM</option></select><input name="periodStart" type="date" required /><input name="periodEnd" type="date" required /><input name="summary" placeholder="Summary" /><button className="primary">Publish</button></form></section>}{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["title", "reportType", "periodStart", "periodEnd", "summary", "createdAt"]} rows={resource.rows} /></>;
+  return <>{isAdmin && <section className="panel-card">
+    <h2 style={{ marginBottom: "16px" }}>Publish report</h2>
+    <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
+      <label>Report title<input name="title" placeholder="e.g. Q3 Financial Summary" required /></label>
+      <label>Report type
+        <select name="reportType">
+          <option>MONTHLY_BILLING</option><option>FINANCIAL</option><option>CLAIMS</option><option>CUSTOM</option>
+        </select>
+      </label>
+      <label>Period start<input name="periodStart" type="date" required /></label>
+      <label>Period end<input name="periodEnd" type="date" required /></label>
+      <label className="wide">Summary<input name="summary" placeholder="Brief summary of the report contents" /></label>
+      <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+        <button className="primary">Publish report</button>
+      </div>
+    </form>
+  </section>}{error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["title", "reportType", "periodStart", "periodEnd", "summary", "createdAt"]} rows={resource.rows} /></>;
 }
 
 function ClaimsPage({ api, token, isAdmin, canCreate }: { api: Api; token: string; isAdmin: boolean; canCreate: boolean }) {
   const resource = useResource(api, "/claims"); const [error, setError] = useState("");
   async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { await api("/claims", { method: "POST", body: JSON.stringify(formValues(event)) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Claim failed"); } }
   async function update(row: Row, status: string) { const rejectionReason = status === "REJECTED" ? window.prompt("Rejection reason") : ""; if (status === "REJECTED" && !rejectionReason) return; await api(`/claims/${row._id}`, { method: "PATCH", body: JSON.stringify({ status, rejectionReason }) }); await resource.load(); }
-  return <>{canCreate && <section className="panel-card"><h2>Submit claim</h2><form className="inline-form" onSubmit={create}><input name="claimNo" placeholder="Claim no." required /><input name="patientName" placeholder="Patient name" required /><input name="payerName" placeholder="Payer" required /><input name="amount" type="number" step="0.01" placeholder="Amount" required /><button className="primary">Submit</button></form></section>}<div className="toolbar"><button onClick={() => void downloadAuthenticated("/claims/export.csv", "claims.csv", token)}>Export CSV</button></div>{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["claimNo", "patientName", "payerName", "amount", "status", "rejectionReason", "submittedAt"]} rows={resource.rows} action={isAdmin ? (row) => <select value={row.status} onChange={(event) => void update(row, event.target.value)}><option>SUBMITTED</option><option>PROCESSING</option><option>APPROVED</option><option>REJECTED</option><option>PAID</option></select> : undefined} /></>;
+  return <>{canCreate && <section className="panel-card">
+    <h2 style={{ marginBottom: "16px" }}>Submit claim</h2>
+    <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
+      <label>Claim no.<input name="claimNo" placeholder="Unique claim reference" required /></label>
+      <label>Patient name<input name="patientName" placeholder="Patient's full name" required /></label>
+      <label>Payer<input name="payerName" placeholder="Insurance or payer name" required /></label>
+      <label>Amount (BDT)<input name="amount" type="number" step="0.01" placeholder="Claim amount" required /></label>
+      <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+        <button className="primary">Submit claim</button>
+      </div>
+    </form>
+  </section>}<div className="toolbar"><button onClick={() => void downloadAuthenticated("/claims/export.csv", "claims.csv", token)}>Export CSV</button></div>{error && <div className="error" style={{ marginBottom: "16px" }}>{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["claimNo", "patientName", "payerName", "amount", "status", "rejectionReason", "submittedAt"]} rows={resource.rows} action={isAdmin ? (row) => <select value={row.status} onChange={(event) => void update(row, event.target.value)}><option>SUBMITTED</option><option>PROCESSING</option><option>APPROVED</option><option>REJECTED</option><option>PAID</option></select> : undefined} /></>;
 }
 
 function NotificationsPage({ api }: { api: Api }) {

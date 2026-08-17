@@ -44,7 +44,8 @@ staffRouter.post("/", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"), asy
       passwordHash: await bcrypt.hash(input.password, 12),
       roles: [input.role],
       permissions: input.permissions,
-      status: "ACTIVE"
+      status: "ACTIVE",
+      requiresPasswordChange: true
     });
     await writeAudit(req, "STAFF_CREATED", "User", staff._id, staff.toObject());
     res.status(201).json({ data: await User.findById(staff._id).select("-passwordHash").lean() });

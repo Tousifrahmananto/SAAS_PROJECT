@@ -10,7 +10,7 @@ export interface Session {
 
 export const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
-type AuthMode = "login" | "register" | "forgot" | "reset";
+type AuthMode = "login" | "register" | "forgot" | "reset" | "change-password";
 
 async function readPayload(response: Response) {
   const text = await response.text();
@@ -37,6 +37,7 @@ export function App() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+  const [tempToken, setTempToken] = useState("");
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -51,10 +52,43 @@ export function App() {
       });
       const payload = await readPayload(response);
       if (!response.ok) throw new Error(payload.error?.message ?? "Sign in failed");
+      
+      if (payload.requiresPasswordChange) {
+        setTempToken(payload.tempToken);
+        setMode("change-password");
+        setPassword("");
+        setConfirmPassword("");
+        return;
+      }
+      
       setSession(payload);
       sessionStorage.setItem("hospital-billing-session", JSON.stringify(payload));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Sign in failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeTempPassword(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      if (password !== confirmPassword) throw new Error("Passwords do not match");
+      const response = await fetch(`${apiBaseUrl}/api/auth/change-temp-password`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tempToken, newPassword: password })
+      });
+      const payload = await readPayload(response);
+      if (!response.ok) throw new Error(payload.error?.message ?? "Password update failed");
+      
+      setSession(payload);
+      sessionStorage.setItem("hospital-billing-session", JSON.stringify(payload));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Password update failed");
     } finally {
       setBusy(false);
     }
@@ -138,8 +172,8 @@ export function App() {
     setConfirmPassword("");
   }
 
-  const submitHandler = mode === "login" ? login : mode === "register" ? register : mode === "forgot" ? forgotPassword : resetPassword;
-  const heading = mode === "login" ? "Welcome back" : mode === "register" ? "Create your workspace" : mode === "forgot" ? "Forgot your password?" : "Choose a new password";
+  const submitHandler = mode === "login" ? login : mode === "register" ? register : mode === "forgot" ? forgotPassword : mode === "reset" ? resetPassword : changeTempPassword;
+  const heading = mode === "login" ? "Welcome back" : mode === "register" ? "Create your workspace" : mode === "forgot" ? "Forgot your password?" : mode === "reset" ? "Choose a new password" : "Change your temporary password";
   const description = mode === "login" ? "Sign in with your hospital account." : mode === "register" ? "Create a hospital and its first administrator." : mode === "forgot" ? "Enter your account email and we’ll send a secure reset link." : "Enter a new password of at least 12 characters.";
 
   if (session) return <PortalDashboard session={session} onLogout={() => { sessionStorage.removeItem("hospital-billing-session"); setSession(null); }} />;
@@ -159,16 +193,16 @@ export function App() {
           <label>Hospital name<input type="text" value={hospitalName} onChange={(e) => setHospitalName(e.target.value)} autoComplete="organization" minLength={2} maxLength={120} required /></label>
           <label>Your full name<input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" minLength={2} maxLength={120} required /></label>
         </>}
-        {mode !== "reset" && <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></label>}
-        {(mode === "login" || mode === "register" || mode === "reset") &&
-          <label>{mode === "login" ? "Password" : "Password (at least 12 characters)"}<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "login" ? 8 : 12} maxLength={128} required /></label>}
-        {(mode === "register" || mode === "reset") &&
+        {(mode !== "reset" && mode !== "change-password") && <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></label>}
+        {(mode === "login" || mode === "register" || mode === "reset" || mode === "change-password") &&
+          <label>{mode === "login" ? "Password" : "New Password (at least 12 characters)"}<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "login" ? 8 : 12} maxLength={128} required /></label>}
+        {(mode === "register" || mode === "reset" || mode === "change-password") &&
           <label>Confirm password<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={12} maxLength={128} required /></label>}
         {error && <div className="error" role="alert">{error}</div>}
         {success && <div className="success" role="status">{success}</div>}
-        <button className="primary" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign in" : mode === "register" ? "Create account" : mode === "forgot" ? "Send reset link" : "Reset password"}</button>
+        <button className="primary" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign in" : mode === "register" ? "Create account" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Reset password" : "Update password"}</button>
         {mode === "login" && <div className="auth-actions"><button type="button" onClick={() => changeMode("forgot")}>Forgot password?</button><button type="button" onClick={() => changeMode("register")}>Create account</button></div>}
-        {mode !== "login" && <small className="auth-switch"><button type="button" onClick={() => changeMode("login")}>Back to sign in</button></small>}
+        {mode !== "login" && mode !== "change-password" && <small className="auth-switch"><button type="button" onClick={() => changeMode("login")}>Back to sign in</button></small>}
       </form>
     </section>
   </main>;

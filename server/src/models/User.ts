@@ -22,6 +22,7 @@ const userSchema = new Schema({
   roles: [{ type: String, enum: userRoles, required: true }],
   permissions: [{ type: String, trim: true }],
   mfaEnabled: { type: Boolean, default: false },
+  requiresPasswordChange: { type: Boolean, default: false },
   status: { type: String, enum: ["ACTIVE", "SUSPENDED", "DISABLED"], default: "ACTIVE" },
   lastLoginAt: { type: Date, default: null }
 }, { timestamps: true });
