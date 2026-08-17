@@ -45,7 +45,11 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput) {
     })
   });
 
-  if (!response.ok) throw new Error(`Invoice email provider returned ${response.status}`);
+  if (!response.ok) {
+    let errorMessage = `Invoice email provider returned ${response.status}`;
+    try { const body = await response.json() as any; if (body?.message) errorMessage += `: ${body.message}`; } catch {}
+    throw new Error(errorMessage);
+  }
   const result = await response.json() as { id?: string };
   return result.id ?? "";
 }

@@ -61,7 +61,7 @@ function invoicePdfInput(invoice: any, hospital: any) {
     totalAmount: invoice.totalAmount.toString(),
     paidAmount: invoice.paidAmount.toString(),
     dueAmount: invoice.dueAmount.toString(),
-    checkoutUrl: `${env.API_URL}/payments/public/checkout/${invoice._id}`
+    checkoutUrl: `${env.SERVER_URL}/payments/public/checkout/${invoice._id}`
   };
 }
 
