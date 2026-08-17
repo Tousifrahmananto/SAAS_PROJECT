@@ -181,10 +181,67 @@ function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncoun
   </>;
 }
 
+const PERMISSIONS = [
+  "patients:read", "patients:create",
+  "encounters:read", "encounters:create",
+  "charges:read", "charges:create",
+  "invoices:read", "invoices:write",
+  "payments:read", "payments:create", "payments:refund",
+  "catalog:read",
+  "documents:read", "documents:create", "documents:update", "documents:delete",
+  "appointments:read", "appointments:create", "appointments:update",
+  "messages:read", "messages:create",
+  "contracts:read", "contracts:sign",
+  "reports:read",
+  "claims:read", "claims:create",
+  "staff:read"
+];
+
 function StaffPage({ api, editable, canCreateAdmin }: { api: Api; editable: boolean; canCreateAdmin: boolean }) {
   const resource = useResource(api, "/staff"); const [error, setError] = useState("");
-  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; setError(""); try { const values = formValues(event); await api("/staff", { method: "POST", body: JSON.stringify({ ...values, permissions: String(values.permissions ?? "").split(",").map((item) => item.trim()).filter(Boolean) }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Create failed"); } }
-  return <><PageState busy={resource.busy} error={resource.error} />{editable && <section className="panel-card"><h2>Add staff member</h2><form className="inline-form" onSubmit={create}><input name="fullName" placeholder="Full name" required /><input name="email" type="email" placeholder="Email" required /><input name="employeeNo" placeholder="Employee no." required /><input name="password" type="password" placeholder="Temporary password (12+)" minLength={12} required /><select name="role"><option value="PROVIDER_STAFF">Provider staff</option>{canCreateAdmin && <option value="ADMIN">Administrator</option>}</select><input name="permissions" placeholder="documents:read, reports:read" /><button className="primary">Create staff</button></form>{error && <div className="error">{error}</div>}</section>}<DataTable columns={["fullName", "email", "employeeNo", "roles", "status", "lastLoginAt"]} rows={resource.rows} /></>;
+  async function create(event: FormEvent<HTMLFormElement>) { 
+    event.preventDefault(); 
+    const form = event.currentTarget; 
+    setError(""); 
+    try { 
+      const values = formValues(event); 
+      const permissions = new FormData(form).getAll("permissions");
+      await api("/staff", { method: "POST", body: JSON.stringify({ ...values, permissions }) }); 
+      form.reset(); 
+      await resource.load(); 
+    } catch (reason) { 
+      setError(reason instanceof Error ? reason.message : "Create failed"); 
+    } 
+  }
+  return <><PageState busy={resource.busy} error={resource.error} />{editable && <section className="panel-card">
+    <h2 style={{ marginBottom: "16px" }}>Add staff member</h2>
+    <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
+      <label>Full name<input name="fullName" placeholder="Full name" required /></label>
+      <label>Email<input name="email" type="email" placeholder="Email" required /></label>
+      <label>Employee no.<input name="employeeNo" placeholder="Employee no." required /></label>
+      <label>Temporary password (12+)<input name="password" type="password" placeholder="Temporary password (12+)" minLength={12} required /></label>
+      <label>Role
+        <select name="role">
+          <option value="PROVIDER_STAFF">Provider staff</option>
+          {canCreateAdmin && <option value="ADMIN">Administrator</option>}
+        </select>
+      </label>
+      <div className="wide">
+        <label style={{ marginBottom: "8px" }}>Permissions</label>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px", padding: "16px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#f8fafc" }}>
+          {PERMISSIONS.map(p => (
+            <label key={p} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.85rem", fontWeight: "normal", color: "#334155" }}>
+              <input type="checkbox" name="permissions" value={p} style={{ width: "auto" }} /> {p}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="wide profile-submit" style={{ marginTop: "8px" }}>
+        <button className="primary">Create staff</button>
+      </div>
+    </form>
+    {error && <div className="error">{error}</div>}
+  </section>}<DataTable columns={["fullName", "email", "employeeNo", "roles", "status", "lastLoginAt"]} rows={resource.rows} /></>;
 }
 
 function DocumentsPage({ api, token, canCreate }: { api: Api; token: string; canCreate: boolean }) {
