@@ -60,7 +60,7 @@ export function PortalDashboard({ session, onLogout }: { session: Session; onLog
     };
     if (id === "admin") return isAdmin;
     if (id === "audit") return privileged;
-    if (id === "clinical") return ["catalog:read", "patients:read", "encounters:read", "charges:read"].every(hasPermission);
+    if (id === "clinical") return ["catalog:read", "patients:read", "encounters:read"].every(hasPermission);
     return !required[id] || hasPermission(required[id]!);
   };
   const [view, setView] = useState<(typeof navigation)[number][0]>(() => {
@@ -91,7 +91,7 @@ export function PortalDashboard({ session, onLogout }: { session: Session; onLog
   const page = {
     dashboard: <DashboardPage api={api} role={roles[0]} navigate={navigate} />,
     organization: <OrganizationPage api={api} editable={isOwner || isAdmin} />,
-    clinical: <ClinicalPage api={api} canManageCatalog={privileged} canCreatePatient={hasPermission("patients:create")} canCreateEncounter={hasPermission("encounters:create")} canCreateCharge={hasPermission("charges:create")} />,
+    clinical: <ClinicalPage api={api} canManageCatalog={privileged} canCreatePatient={hasPermission("patients:create")} canCreateEncounter={hasPermission("encounters:create")} />,
     staff: <StaffPage api={api} editable={isOwner || isAdmin} canCreateAdmin={isAdmin} />,
     documents: <DocumentsPage api={api} token={session.token} canCreate={hasPermission("documents:create")} />,
     appointments: <AppointmentsPage api={api} isAdmin={isAdmin} canCreate={hasPermission("appointments:create")} />,
@@ -147,19 +147,17 @@ function OrganizationPage({ api, editable }: { api: Api; editable: boolean }) {
   </form></section>;
 }
 
-function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncounter, canCreateCharge }: { api: Api; canManageCatalog: boolean; canCreatePatient: boolean; canCreateEncounter: boolean; canCreateCharge: boolean }) {
+function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncounter }: { api: Api; canManageCatalog: boolean; canCreatePatient: boolean; canCreateEncounter: boolean }) {
   const patients = useResource(api, "/patients");
   const departments = useResource(api, "/catalog/departments");
   const services = useResource(api, "/catalog/services");
   const encounters = useResource(api, "/encounters");
-  const charges = useResource(api, "/charges");
   const [error, setError] = useState("");
   async function submit(path: string, body: Row, form: HTMLFormElement, reload: () => Promise<void>) { try { await api(path, { method: "POST", body: JSON.stringify(body) }); form.reset(); setError(""); await reload(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Operation failed"); } }
   async function createPatient(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const values = formValues(event); await submit("/patients", values, event.currentTarget, patients.load); }
   async function createDepartment(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const values = formValues(event); await submit("/catalog/departments", { ...values, isChargeSource: true, isCashCounter: false }, event.currentTarget, departments.load); }
   async function createService(event: FormEvent<HTMLFormElement>) { event.preventDefault(); await submit("/catalog/services", formValues(event), event.currentTarget, services.load); }
   async function openEncounter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); await submit("/encounters", formValues(event), event.currentTarget, encounters.load); }
-  async function addCharge(event: FormEvent<HTMLFormElement>) { event.preventDefault(); await submit("/charges", formValues(event), event.currentTarget, charges.load); }
   return <>{error && <div className="error">{error}</div>}
     {canCreatePatient && <section className="panel-card">
       <h2 style={{ marginBottom: "16px" }}>Register patient</h2>
@@ -206,8 +204,8 @@ function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncoun
         </form>
       </article>
     </section>}
-    {(canCreateEncounter || canCreateCharge) && <section className="summary-grid">
-      {canCreateEncounter && <article className="panel-card">
+    {canCreateEncounter && <section className="summary-grid">
+      <article className="panel-card">
         <h2 style={{ marginBottom: "16px" }}>Open encounter</h2>
         <form className="profile-form" style={{ marginTop: 0 }} onSubmit={openEncounter}>
           <label className="wide">Patient
@@ -230,36 +228,15 @@ function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncoun
             <button className="primary">Open encounter</button>
           </div>
         </form>
-      </article>}
-      {canCreateCharge && <article className="panel-card">
-        <h2 style={{ marginBottom: "16px" }}>Post charge</h2>
-        <form className="profile-form" style={{ marginTop: 0 }} onSubmit={addCharge}>
-          <label className="wide">Encounter
-            <select name="encounterId" required>
-              <option value="">Select Open Encounter</option>{encounters.rows.filter((row) => row.status === "OPEN").map((row) => <option key={row._id} value={row._id}>{row.encounterNo} - {row.patient?.fullName}</option>)}
-            </select>
-          </label>
-          <label className="wide">Service
-            <select name="serviceId" required>
-              <option value="">Select Service</option>{services.rows.map((row) => <option key={row._id} value={row._id}>{row.name} - BDT {decimal(row.standardPrice)}</option>)}
-            </select>
-          </label>
-          <label>Quantity<input name="quantity" type="number" min="0.01" step="0.01" defaultValue="1" /></label>
-          <label>Reference <span style={{fontWeight: "normal", color: "#667085"}}>(Optional)</span><input name="sourceReference" placeholder="Ref no." /></label>
-          <div className="wide profile-submit" style={{ marginTop: "8px" }}>
-            <button className="primary">Post charge</button>
-          </div>
-        </form>
-      </article>}
+      </article>
     </section>}
-    <h2>Recent patients</h2><DataTable columns={["patientNo", "fullName", "phone", "dateOfBirth", "sex"]} rows={patients.rows} /><h2>Encounter queue</h2><DataTable columns={["encounterNo", "patient", "primaryDepartment", "type", "status", "openedAt"]} rows={encounters.rows} /><h2>Charge history</h2><DataTable columns={["encounter", "service", "department", "quantity", "netAmount", "status", "occurredAt"]} rows={charges.rows} />
+    <h2>Recent patients</h2><DataTable columns={["patientNo", "fullName", "phone", "dateOfBirth", "sex"]} rows={patients.rows} /><h2>Encounter queue</h2><DataTable columns={["encounterNo", "patient", "primaryDepartment", "type", "status", "openedAt"]} rows={encounters.rows} />
   </>;
 }
 
 const PERMISSIONS = [
   "patients:read", "patients:create",
   "encounters:read", "encounters:create",
-  "charges:read", "charges:create",
   "invoices:read", "invoices:write",
   "payments:read", "payments:create", "payments:refund",
   "catalog:read",
