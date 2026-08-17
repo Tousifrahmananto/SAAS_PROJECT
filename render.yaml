@@ -25,12 +25,6 @@ services:
         sync: false
       - key: INVOICE_FROM
         sync: false
-      - key: GMAIL_USER
-        sync: false
-      - key: GMAIL_APP_PASSWORD
-        sync: false
-      - key: GMAIL_FROM
-        sync: false
       - key: SSLCOMMERZ_STORE_ID
         sync: false
       - key: SSLCOMMERZ_STORE_PASSWORD
