@@ -13,6 +13,10 @@ const schema = z.object({
   PASSWORD_RESET_FROM: z.string().min(3).optional(),
   INVOICE_FROM: z.string().min(3).optional(),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(20),
+  // Gmail SMTP (nodemailer) — sends to any email address, no domain required
+  GMAIL_USER: z.string().email().optional(),
+  GMAIL_APP_PASSWORD: z.string().min(8).optional(),
+  GMAIL_FROM: z.string().min(3).optional(),
   SSLCOMMERZ_STORE_ID: z.string().min(1).optional(),
   SSLCOMMERZ_STORE_PASSWORD: z.string().min(1).optional(),
   SSLCOMMERZ_SANDBOX: z.enum(["true", "false"]).default("true").transform((value) => value === "true")
