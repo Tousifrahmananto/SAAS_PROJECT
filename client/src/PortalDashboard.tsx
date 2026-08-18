@@ -77,8 +77,9 @@ export function PortalDashboard({ session, onLogout }: { session: Session; onLog
     let response: Response;
     try {
       response = await fetch(`${apiBaseUrl}/api${path}`, {
+        cache: "no-store",
         ...options,
-        headers: { authorization: `Bearer ${session.token}`, ...(options.body ? { "content-type": "application/json" } : {}), ...options.headers }
+        headers: { authorization: `Bearer ${session.token}`, ...(options.body ? { "content-type": "application/json" } : {}), "Cache-Control": "no-cache", ...options.headers }
       });
     } catch { throw new Error("Cannot reach the server. Check the backend URL and CORS settings."); }
     const type = response.headers.get("content-type") ?? "";
