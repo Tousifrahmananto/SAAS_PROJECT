@@ -117,7 +117,7 @@
 .field-help { margin: 8px 0 17px; padding: 11px 13px; background: #eef6ff; color: #375576; border-radius: 8px; line-height: 1.45; }
 .invoice-lines { min-width: 980px; }
 .invoice-builder fieldset:has(.invoice-lines) { overflow-x: auto; }
-.invoice-line { display: grid; grid-template-columns: 80px minmax(240px, 2fr) 110px 125px 130px 90px 125px; gap: 10px; align-items: center; padding: 10px 9px; border-bottom: 1px solid #e8edf4; }
+.invoice-line { display: grid; grid-template-columns: 80px minmax(240px, 2fr) 110px 125px 130px 110px 125px; gap: 10px; align-items: center; padding: 10px 9px; border-bottom: 1px solid #e8edf4; }
 .invoice-line:last-child { border-bottom: 0; }
 .invoice-line-header { padding-top: 0; color: #667085; font-size: .7rem; font-weight: 800; letter-spacing: .045em; text-transform: uppercase; }
 .invoice-line.is-selected { background: #f1f7ff; box-shadow: inset 3px 0 #1769db; }
