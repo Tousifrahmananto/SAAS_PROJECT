@@ -450,9 +450,11 @@ function GuidedInvoiceBuilder({ api, canUseCatalog, onCreated, onError }: { api:
 
   async function createService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;           // grab ref BEFORE any await
+    const values = formValues(event);           // grab values BEFORE any await
     try {
-      await api("/catalog/services", { method: "POST", body: JSON.stringify(formValues(event)) });
-      event.currentTarget.reset();
+      await api("/catalog/services", { method: "POST", body: JSON.stringify(values) });
+      form.reset();
       await catalog.load();
     } catch (reason) {
       onError(reason instanceof Error ? reason.message : "Service creation failed");
