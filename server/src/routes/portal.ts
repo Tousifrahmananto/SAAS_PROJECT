@@ -278,6 +278,9 @@ claimRouter.get("/export.csv", requirePermission("claims:read"), async (req, res
 claimRouter.post("/", requirePermission("claims:create"), async (req, res, next) => {
   try {
     const input = z.object({ claimNo: z.string().trim().min(2).max(40), patientName: z.string().trim().min(2).max(160), payerName: z.string().trim().min(2).max(160), amount: money }).strict().parse(req.body);
+    if (await Claim.exists({ hospital: req.auth!.hospitalId, claimNo: input.claimNo })) {
+      throw new AppError(409, `A claim with number "${input.claimNo}" already exists`, "DUPLICATE_CLAIM_NO");
+    }
     const claim = await Claim.create({ ...input, hospital: req.auth!.hospitalId, updatedBy: req.auth!.userId });
     await writeAudit(req, "CLAIM_CREATED", "Claim", claim._id, claim.toObject());
     res.status(201).json({ data: claim });

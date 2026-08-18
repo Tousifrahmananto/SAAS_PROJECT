@@ -35,6 +35,9 @@ staffRouter.post("/", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"), asy
     }
     const email = input.email.toLowerCase();
     if (await User.exists({ email })) throw new AppError(409, "A user with this email already exists", "EMAIL_IN_USE");
+    if (await User.exists({ hospital: req.auth!.hospitalId, employeeNo: input.employeeNo })) {
+      throw new AppError(409, `An employee with number "${input.employeeNo}" already exists`, "DUPLICATE_EMPLOYEE_NO");
+    }
     const staff = await User.create({
       hospital: req.auth!.hospitalId,
       employeeNo: input.employeeNo,

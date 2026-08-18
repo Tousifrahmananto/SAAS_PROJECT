@@ -20,7 +20,11 @@ catalogRouter.get("/departments", requirePermission("catalog:read"), async (req,
 catalogRouter.post("/departments", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
   try {
     const input = z.object({ code: z.string().trim().min(2).max(20), name: z.string().trim().min(2).max(120), type: z.string().trim().min(2).max(30), isChargeSource: z.boolean().default(true), isCashCounter: z.boolean().default(false) }).strict().parse(req.body);
-    const department = await Department.create({ ...input, hospital: req.auth!.hospitalId });
+    const code = input.code.toUpperCase();
+    if (await Department.exists({ hospital: req.auth!.hospitalId, code })) {
+      throw new AppError(409, `A department with code "${code}" already exists in this hospital`, "DUPLICATE_DEPARTMENT_CODE");
+    }
+    const department = await Department.create({ ...input, code, hospital: req.auth!.hospitalId });
     await writeAudit(req, "DEPARTMENT_CREATED", "Department", department._id, department.toObject());
     res.status(201).json({ data: department });
   } catch (error) { next(error); }
