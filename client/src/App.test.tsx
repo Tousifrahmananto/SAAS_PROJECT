@@ -52,11 +52,14 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "owner@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "long-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(await screen.findByRole("link", { name: "Patients & Charges" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Patients & Departments" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Invoices" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Contracts" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Administration" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: "Patients & Departments" }));
+    expect(await screen.findByRole("heading", { name: "Add department" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Add billable service" })).toBeInTheDocument();
   });
 
   it("shows the Administration menu only to administrator roles", async () => {
@@ -87,7 +90,7 @@ describe("App", () => {
     expect(await screen.findByRole("link", { name: "Documents" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Reports" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Invoices" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Patients & Charges" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Patients & Departments" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Administration" })).not.toBeInTheDocument();
   });
 
@@ -155,6 +158,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("link", { name: "Invoices" }));
 
     const section = screen.getByRole("heading", { name: "Create manual invoice" }).closest("section")!;
+    expect(screen.queryByRole("heading", { name: "Add new service to catalog" })).not.toBeInTheDocument();
     const form = section.querySelector("form")!;
     const fields = within(section);
     const title = fields.getByLabelText("Invoice title") as HTMLInputElement;

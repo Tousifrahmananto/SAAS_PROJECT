@@ -10,17 +10,6 @@ import { User } from "../models/User.js";
 export const organizationRouter = Router();
 organizationRouter.use(requireAuth);
 
-organizationRouter.get(
-  "/",
-  requireRole("ADMIN", "SUPER_ADMIN"),
-  async (_req, res, next) => {
-    try {
-      const organizations = await Hospital.find({}).sort({ createdAt: -1 }).lean();
-      res.json({ data: organizations });
-    } catch (error) { next(error); }
-  }
-);
-
 organizationRouter.get("/admin/overview", requireRole("ADMIN", "SUPER_ADMIN"), async (_req, res, next) => {
   try {
     const organizations = await Hospital.find({}).sort({ createdAt: -1 }).lean();

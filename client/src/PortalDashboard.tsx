@@ -5,7 +5,7 @@ type Row = Record<string, any>;
 type Api = (path: string, options?: RequestInit) => Promise<any>;
 
 const navigation = [
-  ["dashboard", "Dashboard"], ["organization", "Organization"], ["clinical", "Patients & Charges"], ["staff", "Staff"],
+  ["dashboard", "Dashboard"], ["organization", "Organization"], ["clinical", "Patients & Departments"], ["staff", "Staff"],
   ["documents", "Documents"], ["appointments", "Appointments"], ["messages", "Messages"],
   ["contracts", "Contracts"], ["invoices", "Invoices"], ["payments", "Payments"],
   ["reports", "Reports"], ["claims", "Claims"], ["notifications", "Notifications"], ["audit", "Audit logs"], ["admin", "Administration"]
@@ -196,6 +196,18 @@ function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncoun
           </div>
         </form>
       </article>
+      <article className="panel-card">
+        <h2 style={{ marginBottom: "16px" }}>Add billable service</h2>
+        <form className="profile-form" style={{ marginTop: 0 }} onSubmit={createService}>
+          <label className="wide">Department<select name="departmentId" required><option value="">Select department</option>{departments.rows.map((row) => <option key={row._id} value={row._id}>{row.code} - {row.name}</option>)}</select></label>
+          <label>Service code<input name="code" placeholder="e.g. CONS-01" required /></label>
+          <label>Service name<input name="name" placeholder="e.g. Specialist consultation" required /></label>
+          <label>Category<input name="category" placeholder="e.g. CONSULTATION" required /></label>
+          <label>Standard price (BDT)<input name="standardPrice" type="number" min="0" step="0.01" required /></label>
+          <label>VAT rate (%)<input name="vatRatePercent" type="number" min="0" max="100" step="0.01" defaultValue="0" required /></label>
+          <div className="wide profile-submit"><button className="primary">Add service</button></div>
+        </form>
+      </article>
     </section>}
     {canCreateEncounter && <section className="summary-grid">
       <article className="panel-card">
@@ -223,14 +235,15 @@ function ClinicalPage({ api, canManageCatalog, canCreatePatient, canCreateEncoun
         </form>
       </article>
     </section>}
-    <h2>Recent patients</h2><DataTable columns={["patientNo", "fullName", "phone", "dateOfBirth", "sex"]} rows={patients.rows} /><h2>Encounter queue</h2><DataTable columns={["encounterNo", "patient", "primaryDepartment", "type", "status", "openedAt"]} rows={encounters.rows} />
+    <h2>Recent patients</h2><DataTable columns={["patientNo", "fullName", "phone", "dateOfBirth", "sex"]} rows={patients.rows} /><h2>Departments</h2><DataTable columns={["code", "name", "type"]} rows={departments.rows} /><h2>Billable services</h2><DataTable columns={["code", "name", "department", "category", "standardPrice", "vatRatePercent"]} rows={services.rows} /><h2>Encounter queue</h2><DataTable columns={["encounterNo", "patient", "primaryDepartment", "type", "status", "openedAt"]} rows={encounters.rows} />
   </>;
 }
 
 const PERMISSIONS = [
   "patients:read", "patients:create",
   "encounters:read", "encounters:create",
-  "invoices:read", "invoices:write",
+  "invoices:read",
+  "charges:read", "charges:create",
   "payments:read", "payments:create", "payments:refund",
   "catalog:read",
   "documents:read", "documents:create", "documents:update", "documents:delete",
@@ -285,7 +298,7 @@ function StaffPage({ api, editable, canCreateAdmin }: { api: Api; editable: bool
         </select>
       </label>
       {departments.error && <div className="error wide">Departments could not be loaded: {departments.error}</div>}
-      {!departments.busy && !departments.error && !departments.rows.length && role === "PROVIDER_STAFF" && <div className="field-help wide">Create an active department in Patients &amp; Charges before adding provider staff.</div>}
+      {!departments.busy && !departments.error && !departments.rows.length && role === "PROVIDER_STAFF" && <div className="field-help wide">Create an active department in Patients &amp; Departments before adding provider staff.</div>}
       <div className="wide">
         <label style={{ marginBottom: "8px" }}>Permissions</label>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px", padding: "16px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#f8fafc" }}>
@@ -306,8 +319,8 @@ function StaffPage({ api, editable, canCreateAdmin }: { api: Api; editable: bool
 
 function DocumentsPage({ api, token, canCreate, canUpdate, canDelete }: { api: Api; token: string; canCreate: boolean; canUpdate: boolean; canDelete: boolean }) {
   const resource = useResource(api, "/documents"); const [error, setError] = useState("");
-  async function upload(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; const values = formValues(event); const file = values.file as File; if (!file?.size) return; setError(""); try { const contentBase64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("Could not read file")); reader.readAsDataURL(file); }); await api("/documents", { method: "POST", body: JSON.stringify({ name: file.name, category: values.category, mimeType: file.type, contentBase64 }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Upload failed"); } }
-  async function download(row: Row) { const response = await fetch(`${apiBaseUrl}/api/documents/${row._id}/download`, { headers: { authorization: `Bearer ${token}` } }); if (!response.ok) { setError("Download failed"); return; } const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a"); link.href = url; link.download = row.name; link.click(); URL.revokeObjectURL(url); }
+  async function upload(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; const values = formValues(event); const file = values.file as File; if (!file?.size) return; setError(""); try { await api("/documents", { method: "POST", body: JSON.stringify({ name: file.name, category: values.category, mimeType: file.type, contentBase64: await fileDataUrl(file) }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Upload failed"); } }
+  async function download(row: Row) { try { await downloadAuthenticated(`/documents/${row._id}/download`, row.name, token); } catch (reason) { setError(reason instanceof Error ? reason.message : "Download failed"); } }
   async function rename(row: Row) { const name = window.prompt("New document name", row.name); if (!name || name === row.name) return; try { await api(`/documents/${row._id}`, { method: "PATCH", body: JSON.stringify({ name }) }); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Rename failed"); } }
   async function remove(row: Row) { if (!window.confirm(`Delete ${row.name}? This cannot be undone.`)) return; try { await api(`/documents/${row._id}`, { method: "DELETE" }); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Delete failed"); } }
   return <>{canCreate && <section className="panel-card">
@@ -323,8 +336,7 @@ function DocumentsPage({ api, token, canCreate, canUpdate, canDelete }: { api: A
         <button className="primary">Upload document</button>
       </div>
     </form>
-    {error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}
-  </section>}{error && !canCreate && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["name", "category", "mimeType", "size", "createdAt"]} rows={resource.rows} action={(row) => <span className="row-actions"><button onClick={() => void download(row)}>Download</button>{canUpdate && <button onClick={() => void rename(row)}>Rename</button>}{canDelete && <button className="danger-button" onClick={() => void remove(row)}>Delete</button>}</span>} /></>;
+  </section>}{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["name", "category", "mimeType", "size", "createdAt"]} rows={resource.rows} action={(row) => <span className="row-actions"><button onClick={() => void download(row)}>Download</button>{canUpdate && <button onClick={() => void rename(row)}>Rename</button>}{canDelete && <button className="danger-button" onClick={() => void remove(row)}>Delete</button>}</span>} /></>;
 }
 
 function AppointmentsPage({ api, isAdmin, canCreate, canUpdate }: { api: Api; isAdmin: boolean; canCreate: boolean; canUpdate: boolean }) {
@@ -349,8 +361,7 @@ function AppointmentsPage({ api, isAdmin, canCreate, canUpdate }: { api: Api; is
         <button className="primary" disabled={!slot}>Request appointment</button>
       </div>
     </form>
-    {error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}
-  </section>}{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><section className="panel-card"><h2>Appointment calendar</h2><div className="appointment-calendar">{calendar.map(([day, rows]) => <article key={day}><h3>{day}</h3>{rows.map((row) => <div className="calendar-event" key={row._id}><strong>{new Date(row.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong><span>{row.subject}</span><small>{row.status}</small></div>)}</article>)}</div></section><DataTable columns={["subject", "requestedBy", "startsAt", "durationMinutes", "status", "decisionNote", "reminderStatus"]} rows={resource.rows} action={(row) => <span className="row-actions">{isAdmin && row.status === "REQUESTED" && <><button onClick={() => void decide(row._id, "APPROVED")}>Approve</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></>}{canUpdate && ["REQUESTED", "APPROVED"].includes(row.status) && <><button onClick={() => void reschedule(row)}>Reschedule</button><button onClick={() => void decide(row._id, "CANCELLED")}>Cancel</button></>}{isAdmin && row.status === "APPROVED" && <button onClick={() => void remind(row)}>Send reminder</button>}</span>} /></>;
+  </section>}{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><section className="panel-card"><h2>Appointment calendar</h2>{calendar.length ? <div className="appointment-calendar">{calendar.map(([day, rows]) => <article key={day}><h3>{day}</h3>{rows.map((row) => <div className="calendar-event" key={row._id}><strong>{new Date(row.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong><span>{row.subject}</span><small>{row.status}</small></div>)}</article>)}</div> : <div className="empty-state">No appointments scheduled.</div>}</section><DataTable columns={["subject", "requestedBy", "startsAt", "durationMinutes", "status", "decisionNote", "reminderStatus"]} rows={resource.rows} action={(row) => <span className="row-actions">{isAdmin && row.status === "REQUESTED" && <><button onClick={() => void decide(row._id, "APPROVED")}>Approve</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></>}{canUpdate && ["REQUESTED", "APPROVED"].includes(row.status) && <><button onClick={() => void reschedule(row)}>Reschedule</button><button onClick={() => void decide(row._id, "CANCELLED")}>Cancel</button></>}{isAdmin && row.status === "APPROVED" && <button onClick={() => void remind(row)}>Send reminder</button>}</span>} /></>;
 }
 
 function MessagesPage({ api, canCreate }: { api: Api; canCreate: boolean }) {
@@ -427,7 +438,6 @@ function numberValue(value: string) {
 
 function GuidedInvoiceBuilder({ api, canUseCatalog, onCreated, onError }: { api: Api; canUseCatalog: boolean; onCreated: (result: any) => void; onError: (message: string) => void }) {
   const catalog = useResource(api, "/catalog/services", canUseCatalog);
-  const departments = useResource(api, "/catalog/departments", canUseCatalog);
   const [lines, setLines] = useState<InvoiceBuilderLine[]>(() => demoInvoiceLines.map((line) => ({ ...line })));
   const [discountAmount, setDiscountAmount] = useState("0");
   const [submitting, setSubmitting] = useState(false);
@@ -494,39 +504,7 @@ function GuidedInvoiceBuilder({ api, canUseCatalog, onCreated, onError }: { api:
     finally { setSubmitting(false); }
   }
 
-  async function createService(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;           // grab ref BEFORE any await
-    const values = formValues(event);           // grab values BEFORE any await
-    try {
-      await api("/catalog/services", { method: "POST", body: JSON.stringify(values) });
-      form.reset();
-      await catalog.load();
-    } catch (reason) {
-      onError(reason instanceof Error ? reason.message : "Service creation failed");
-    }
-  }
-
   return <>
-    {canUseCatalog && <section className="panel-card">
-      <h2 style={{ marginBottom: "16px" }}>Add new service to catalog</h2>
-      <p style={{ marginBottom: "16px" }}>Add a service to the catalog to make it available in the invoice builder below.</p>
-      <form className="profile-form" style={{ marginTop: 0 }} onSubmit={createService}>
-        <label className="wide">Department
-          <select name="departmentId" required>
-            <option value="">Select Department</option>{departments.rows.map((row) => <option key={row._id} value={row._id}>{row.name}</option>)}
-          </select>
-        </label>
-        <label>Code<input name="code" placeholder="Service code" required /></label>
-        <label>Name<input name="name" placeholder="Service name" required /></label>
-        <label className="wide">Category<input name="category" placeholder="Category" required /></label>
-        <label>Price (BDT)<input name="standardPrice" type="number" step="0.01" placeholder="Price" required /></label>
-        <label>VAT %<input name="vatRatePercent" type="number" step="0.01" placeholder="VAT %" /></label>
-        <div className="wide profile-submit" style={{ marginTop: "8px" }}>
-          <button className="primary">Add service</button>
-        </div>
-      </form>
-    </section>}
     <section className="panel-card invoice-builder">
       <div className="invoice-builder-heading"><div><span className="eyebrow">Guided invoice builder</span><h2>Create manual invoice</h2><p>Complete the patient details, tick the charges that apply, adjust days or quantities, then review the total before issuing.</p></div><div className="invoice-builder-total"><small>Invoice total</small><strong>BDT {total.toFixed(2)}</strong><span>{selectedLines.length} charge{selectedLines.length === 1 ? "" : "s"} selected</span></div></div>
       <form className="invoice-builder-form" onSubmit={createInvoice}>

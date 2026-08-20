@@ -172,4 +172,31 @@ describe("portal authorization", () => {
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("rejects future patient birth dates before database access", async () => {
+    const response = await request(app)
+      .post("/api/patients")
+      .set("authorization", `Bearer ${token(["PROVIDER_STAFF"], ["patients:create"])}`)
+      .send({ fullName: "Future Patient", phone: "01700000000", dateOfBirth: "2999-01-01", sex: "UNKNOWN" });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects service VAT rates above 100 percent", async () => {
+    const response = await request(app)
+      .post("/api/catalog/services")
+      .set("authorization", `Bearer ${token(["PROVIDER_OWNER"])}`)
+      .send({ departmentId: new Types.ObjectId().toString(), code: "TEST", name: "Test service", category: "TEST", standardPrice: "100", vatRatePercent: "101" });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects manual invoice VAT rates above 100 percent", async () => {
+    const response = await request(app)
+      .post("/api/invoices")
+      .set("authorization", `Bearer ${token(["PROVIDER_OWNER"])}`)
+      .send({ title: "Invalid VAT", patientName: "Sample Patient", patientEmail: "patient@example.test", patientPhone: "01700000000", dueAt: "2026-12-31", items: [{ description: "Service", quantity: "1", unitPrice: "100", vatPercent: "101" }] });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
 });

@@ -5,6 +5,7 @@ import { AppError } from "../lib/errors.js";
 import { nextSequence } from "../models/Counter.js";
 import { Encounter } from "../models/Encounter.js";
 import { Patient } from "../models/Patient.js";
+import { Department } from "../models/Department.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
 
 export const encounterRouter = Router();
@@ -32,6 +33,12 @@ encounterRouter.post("/", requirePermission("encounters:create"), async (req, re
     }).parse(req.body);
     const patient = await Patient.exists({ _id: input.patientId, hospital: req.auth!.hospitalId });
     if (!patient) throw new AppError(404, "Patient not found", "PATIENT_NOT_FOUND");
+    if (!await Department.exists({ _id: input.primaryDepartmentId, hospital: req.auth!.hospitalId, isActive: true })) {
+      throw new AppError(404, "Active department not found", "DEPARTMENT_NOT_FOUND");
+    }
+    if (await Encounter.exists({ hospital: req.auth!.hospitalId, patient: input.patientId, primaryDepartment: input.primaryDepartmentId, status: "OPEN" })) {
+      throw new AppError(409, "The patient already has an open encounter in this department", "DUPLICATE_OPEN_ENCOUNTER");
+    }
     const sequence = await nextSequence(req.auth!.hospitalId, "encounter");
     const encounter = await Encounter.create({
       hospital: req.auth!.hospitalId,

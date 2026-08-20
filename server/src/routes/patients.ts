@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { writeAudit } from "../lib/audit.js";
+import { AppError } from "../lib/errors.js";
 import { nextSequence } from "../models/Counter.js";
 import { Patient } from "../models/Patient.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
@@ -29,12 +30,19 @@ patientRouter.post("/", requirePermission("patients:create"), async (req, res, n
   try {
     const input = z.object({
       fullName: z.string().trim().min(2).max(160),
-      dateOfBirth: z.coerce.date(),
+      dateOfBirth: z.coerce.date().refine((value) => value <= new Date(), "Date of birth cannot be in the future"),
       sex: z.enum(["MALE", "FEMALE", "OTHER", "UNKNOWN"]).default("UNKNOWN"),
       phone: z.string().trim().min(7).max(20),
       email: z.union([z.email(), z.literal("")]).transform((value) => value || undefined).optional(),
       nidOrPassport: z.string().trim().max(40).transform((value) => value || undefined).optional()
     }).parse(req.body);
+    if (input.nidOrPassport && await Patient.exists({ hospital: req.auth!.hospitalId, nidOrPassport: input.nidOrPassport })) {
+      throw new AppError(409, "A patient with this NID or passport already exists", "DUPLICATE_PATIENT_ID");
+    }
+    const escapedName = input.fullName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (await Patient.exists({ hospital: req.auth!.hospitalId, phone: input.phone, dateOfBirth: input.dateOfBirth, fullName: new RegExp(`^${escapedName}$`, "i") })) {
+      throw new AppError(409, "This patient appears to be registered already", "DUPLICATE_PATIENT");
+    }
     const sequence = await nextSequence(req.auth!.hospitalId, "patient");
     const patient = await Patient.create({ ...input, hospital: req.auth!.hospitalId, patientNo: `P-${String(sequence).padStart(6, "0")}` });
     await writeAudit(req, "PATIENT_CREATED", "Patient", patient._id, patient.toObject());

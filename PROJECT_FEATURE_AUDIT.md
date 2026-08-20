@@ -9,7 +9,7 @@ This audit compares the current MERN implementation with the submitted project d
 - Client type check: passed
 - Server type check: passed
 - Client tests: 10 passed
-- Server tests: 17 passed
+- Server tests: 20 passed
 - Production build: passed
 
 ## Module status
@@ -31,7 +31,7 @@ This audit compares the current MERN implementation with the submitted project d
 
 ## Staff and department workflow
 
-1. An organization owner or permitted administrator first creates departments in **Patients & Charges**.
+1. An organization owner or permitted administrator first creates departments in **Patients & Departments**.
 2. In **Staff**, the administrator enters the staff member's name, email, phone, employee number, role and permissions.
 3. A provider-staff account must be assigned to an active department. An administrator account may remain organization-wide.
 4. The portal sends `departmentId`, the MongoDB ObjectId of the selected department, to the staff API.

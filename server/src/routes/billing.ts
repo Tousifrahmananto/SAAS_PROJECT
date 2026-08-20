@@ -211,7 +211,7 @@ invoiceRouter.post("/", requireRole("PROVIDER_OWNER", "BILLING_ADMIN", "ADMIN", 
         description: z.string().trim().min(1).max(240),
         quantity: z.coerce.string().regex(/^\d+(\.\d{1,2})?$/).refine((value) => new Decimal(value).greaterThan(0)),
         unitPrice: money,
-        vatPercent: z.coerce.string().regex(/^\d+(\.\d{1,2})?$/).default("0")
+        vatPercent: z.coerce.string().regex(/^\d+(\.\d{1,2})?$/).refine((value) => new Decimal(value).lessThanOrEqualTo(100), "VAT cannot exceed 100 percent").default("0")
       })).min(1).max(100)
     }).strict().parse(req.body);
     const items = input.items.map((item) => {

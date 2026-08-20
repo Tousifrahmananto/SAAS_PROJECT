@@ -9,6 +9,7 @@ import { Service } from "../models/Service.js";
 
 const objectId = z.string().regex(/^[a-f0-9]{24}$/i);
 const money = z.coerce.string().regex(/^\d+(\.\d{1,2})?$/).refine((value) => new Decimal(value).greaterThanOrEqualTo(0));
+const percentage = money.refine((value) => new Decimal(value).lessThanOrEqualTo(100), "Percentage cannot exceed 100");
 
 export const catalogRouter = Router();
 catalogRouter.use(requireAuth);
@@ -35,10 +36,13 @@ catalogRouter.get("/services", requirePermission("catalog:read"), async (req, re
 });
 catalogRouter.post("/services", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
   try {
-    const input = z.object({ departmentId: objectId, code: z.string().trim().min(2).max(30), name: z.string().trim().min(2).max(180), category: z.string().trim().min(2).max(40), standardPrice: money, vatRatePercent: money.default("0") }).strict().parse(req.body);
+    const input = z.object({ departmentId: objectId, code: z.string().trim().min(2).max(30), name: z.string().trim().min(2).max(180), category: z.string().trim().min(2).max(40), standardPrice: money, vatRatePercent: percentage.default("0") }).strict().parse(req.body);
     const code = input.code.toUpperCase();
     if (await Service.exists({ hospital: req.auth!.hospitalId, code })) {
       throw new AppError(409, `A service with code "${code}" already exists in this hospital`, "DUPLICATE_SERVICE_CODE");
+    }
+    if (!await Department.exists({ _id: input.departmentId, hospital: req.auth!.hospitalId, isActive: true })) {
+      throw new AppError(404, "Active department not found in this hospital", "DEPARTMENT_NOT_FOUND");
     }
     const service = await Service.create({ ...input, code, department: input.departmentId, hospital: req.auth!.hospitalId });
     await writeAudit(req, "SERVICE_CREATED", "Service", service._id, service.toObject());
