@@ -233,7 +233,7 @@ const PERMISSIONS = [
 ];
 
 function StaffPage({ api, editable, canCreateAdmin }: { api: Api; editable: boolean; canCreateAdmin: boolean }) {
-  const resource = useResource(api, "/staff"); const [error, setError] = useState("");
+  const resource = useResource(api, "/staff"); const departments = useResource(api, "/catalog/departments", editable); const [error, setError] = useState(""); const [role, setRole] = useState("PROVIDER_STAFF");
   async function create(event: FormEvent<HTMLFormElement>) { 
     event.preventDefault(); 
     const form = event.currentTarget; 
@@ -241,26 +241,41 @@ function StaffPage({ api, editable, canCreateAdmin }: { api: Api; editable: bool
     try { 
       const values = formValues(event); 
       const permissions = new FormData(form).getAll("permissions");
-      await api("/staff", { method: "POST", body: JSON.stringify({ ...values, permissions }) }); 
-      form.reset(); 
+      await api("/staff", { method: "POST", body: JSON.stringify({ ...values, departmentId: values.departmentId || null, permissions }) });
+      form.reset(); setRole("PROVIDER_STAFF");
       await resource.load(); 
     } catch (reason) { 
       setError(reason instanceof Error ? reason.message : "Create failed"); 
     } 
   }
+  async function updateStaff(row: Row, changes: Row) {
+    setError("");
+    try { await api(`/staff/${row._id}`, { method: "PATCH", body: JSON.stringify(changes) }); await resource.load(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Staff update failed"); }
+  }
   return <><PageState busy={resource.busy} error={resource.error} />{editable && <section className="panel-card">
     <h2 style={{ marginBottom: "16px" }}>Add staff member</h2>
+    <p>Each provider staff account must be assigned to an active department. Administrators may remain organization-wide.</p>
     <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
       <label>Full name<input name="fullName" placeholder="Full name" required /></label>
       <label>Email<input name="email" type="email" placeholder="Email" required /></label>
+      <label>Phone<input name="phone" type="tel" placeholder="01XXXXXXXXX" /></label>
       <label>Employee no.<input name="employeeNo" placeholder="Employee no." required /></label>
       <label>Temporary password (12+)<input name="password" type="password" placeholder="Temporary password (12+)" minLength={12} required /></label>
       <label>Role
-        <select name="role">
+        <select name="role" value={role} onChange={(event) => setRole(event.target.value)}>
           <option value="PROVIDER_STAFF">Provider staff</option>
           {canCreateAdmin && <option value="ADMIN">Administrator</option>}
         </select>
       </label>
+      <label className="wide">Department
+        <select name="departmentId" required={role === "PROVIDER_STAFF"}>
+          <option value="">{role === "PROVIDER_STAFF" ? "Select staff department" : "No department (organization-wide)"}</option>
+          {departments.rows.map((department) => <option key={department._id} value={department._id}>{department.code} — {department.name}</option>)}
+        </select>
+      </label>
+      {departments.error && <div className="error wide">Departments could not be loaded: {departments.error}</div>}
+      {!departments.busy && !departments.error && !departments.rows.length && role === "PROVIDER_STAFF" && <div className="field-help wide">Create an active department in Patients &amp; Charges before adding provider staff.</div>}
       <div className="wide">
         <label style={{ marginBottom: "8px" }}>Permissions</label>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px", padding: "16px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#f8fafc" }}>
@@ -276,7 +291,7 @@ function StaffPage({ api, editable, canCreateAdmin }: { api: Api; editable: bool
       </div>
     </form>
     {error && <div className="error">{error}</div>}
-  </section>}<DataTable columns={["fullName", "email", "employeeNo", "roles", "status", "lastLoginAt"]} rows={resource.rows} /></>;
+  </section>}<DataTable columns={["fullName", "email", "phone", "employeeNo", "department", "roles", "status", "lastLoginAt"]} rows={resource.rows} action={editable ? (row) => row.roles?.includes("PROVIDER_OWNER") ? null : <span className="row-actions"><select aria-label={`Department for ${row.fullName}`} value={row.department?._id ?? ""} onChange={(event) => void updateStaff(row, { departmentId: event.target.value || null })}><option value="" disabled={row.roles?.includes("PROVIDER_STAFF")}>{row.roles?.includes("PROVIDER_STAFF") ? "Select department" : "No department"}</option>{departments.rows.map((department) => <option key={department._id} value={department._id}>{department.code} — {department.name}</option>)}</select><select aria-label={`Status for ${row.fullName}`} value={row.status} onChange={(event) => void updateStaff(row, { status: event.target.value })}><option>ACTIVE</option><option>SUSPENDED</option><option>DISABLED</option></select></span> : undefined} /></>;
 }
 
 function DocumentsPage({ api, token, canCreate }: { api: Api; token: string; canCreate: boolean }) {
@@ -615,6 +630,7 @@ function displayValue(key: string, value: any) {
   if (key.endsWith("At") || key.toLowerCase().includes("date")) return dateTime(value);
   if (Array.isArray(value)) return value.join(", ");
   if (value && typeof value === "object" && "$numberDecimal" in value) return decimal(value);
+  if (key === "department" && value && typeof value === "object") return [value.code, value.name].filter(Boolean).join(" — ");
   if (value && typeof value === "object") return value.fullName ?? value.invoiceNo ?? value.encounterNo ?? value.patientNo ?? value.name ?? "-";
   return String(value ?? "-");
 }

@@ -91,6 +91,34 @@ describe("App", () => {
     expect(screen.queryByRole("link", { name: "Administration" })).not.toBeInTheDocument();
   });
 
+  it("creates provider staff under a selected department", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/auth/login")) return new Response(JSON.stringify({ token: "owner-token", user: { fullName: "Provider Owner", email: "owner@example.com", roles: ["PROVIDER_OWNER"] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/api/dashboard")) return new Response(JSON.stringify({ data: { billed: "0.00", collected: "0.00", outstanding: "0.00", invoices: 0, patients: 0, openEncounters: 0, activeStaff: 1, upcomingAppointments: 0, claims: {} } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/api/catalog/departments")) return new Response(JSON.stringify({ data: [{ _id: "64b000000000000000000010", code: "CARD", name: "Cardiology" }] }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.endsWith("/api/staff") && options?.method === "POST") return new Response(JSON.stringify({ data: { _id: "staff-1" } }), { status: 201, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "long-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Staff" }));
+
+    fireEvent.change(await screen.findByLabelText("Full name"), { target: { value: "Cardiology Assistant" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "assistant@example.test" } });
+    fireEvent.change(screen.getByLabelText("Employee no."), { target: { value: "CARD-001" } });
+    fireEvent.change(screen.getByLabelText("Temporary password (12+)"), { target: { value: "temporary-pass-123" } });
+    fireEvent.change(screen.getByLabelText("Department"), { target: { value: "64b000000000000000000010" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create staff" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/staff"), expect.objectContaining({ method: "POST" })));
+    const request = fetchMock.mock.calls.find(([input, options]) => String(input).endsWith("/api/staff") && options?.method === "POST")?.[1];
+    expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({ role: "PROVIDER_STAFF", departmentId: "64b000000000000000000010" }));
+  });
+
   it("creates a manual invoice without losing the submitted form reference", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
       const url = String(input);

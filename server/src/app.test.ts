@@ -126,6 +126,22 @@ describe("portal authorization", () => {
     expect(response.body.error.code).toBe("FORBIDDEN");
   });
 
+  it("requires a department when creating provider staff", async () => {
+    const response = await request(app)
+      .post("/api/staff")
+      .set("authorization", `Bearer ${token(["PROVIDER_OWNER"])}`)
+      .send({
+        fullName: "Department Staff",
+        email: "department-staff@example.test",
+        employeeNo: "DEPT-001",
+        password: "secure-password-123",
+        role: "PROVIDER_STAFF",
+        permissions: ["documents:read"]
+      });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("DEPARTMENT_REQUIRED");
+  });
+
   it("rejects malformed payment notifications", async () => {
     const response = await request(app).post("/api/payments/sslcommerz/ipn").type("form").send({});
     expect(response.status).toBe(400);

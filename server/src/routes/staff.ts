@@ -4,15 +4,24 @@ import { z } from "zod";
 import { writeAudit } from "../lib/audit.js";
 import { AppError } from "../lib/errors.js";
 import { requireAuth, requirePermission, requireRole } from "../middleware/auth.js";
+import { Department } from "../models/Department.js";
 import { User } from "../models/User.js";
 
 export const staffRouter = Router();
 staffRouter.use(requireAuth);
+const objectId = z.string().regex(/^[a-f0-9]{24}$/i);
+
+async function validateDepartment(departmentId: string, hospitalId: unknown) {
+  const department = await Department.findOne({ _id: departmentId, hospital: hospitalId, isActive: true }).select("_id").lean();
+  if (!department) throw new AppError(404, "Active department not found in this organization", "DEPARTMENT_NOT_FOUND");
+  return department._id;
+}
 
 staffRouter.get("/", requirePermission("staff:read"), async (req, res, next) => {
   try {
     const staff = await User.find({ hospital: req.auth!.hospitalId })
       .select("fullName email phone employeeNo roles permissions status department lastLoginAt createdAt")
+      .populate("department", "code name type")
       .sort({ createdAt: -1 })
       .lean();
     res.json({ data: staff });
@@ -28,11 +37,16 @@ staffRouter.post("/", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"), asy
       employeeNo: z.string().trim().min(2).max(30),
       password: z.string().min(12).max(128),
       role: z.enum(["PROVIDER_STAFF", "ADMIN"]).default("PROVIDER_STAFF"),
+      departmentId: objectId.nullable().optional(),
       permissions: z.array(z.string().trim().min(3).max(80)).max(30).default([])
     }).strict().parse(req.body);
     if (input.role === "ADMIN" && !req.auth!.roles.some((role) => ["ADMIN", "SUPER_ADMIN"].includes(role))) {
       throw new AppError(403, "Only an administrator can create another administrator", "FORBIDDEN");
     }
+    if (input.role === "PROVIDER_STAFF" && !input.departmentId) {
+      throw new AppError(400, "Select a department for provider staff", "DEPARTMENT_REQUIRED");
+    }
+    const department = input.departmentId ? await validateDepartment(input.departmentId, req.auth!.hospitalId) : null;
     const email = input.email.toLowerCase();
     if (await User.exists({ email })) throw new AppError(409, "A user with this email already exists", "EMAIL_IN_USE");
     if (await User.exists({ hospital: req.auth!.hospitalId, employeeNo: input.employeeNo })) {
@@ -44,6 +58,7 @@ staffRouter.post("/", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"), asy
       fullName: input.fullName,
       email,
       phone: input.phone,
+      department,
       passwordHash: await bcrypt.hash(input.password, 12),
       roles: [input.role],
       permissions: input.permissions,
@@ -51,7 +66,7 @@ staffRouter.post("/", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADMIN"), asy
       requiresPasswordChange: true
     });
     await writeAudit(req, "STAFF_CREATED", "User", staff._id, staff.toObject());
-    res.status(201).json({ data: await User.findById(staff._id).select("-passwordHash").lean() });
+    res.status(201).json({ data: await User.findById(staff._id).select("-passwordHash").populate("department", "code name type").lean() });
   } catch (error) { next(error); }
 });
 
@@ -62,6 +77,7 @@ staffRouter.patch("/:staffId", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADM
       fullName: z.string().trim().min(2).max(140).optional(),
       phone: z.string().trim().max(20).optional(),
       status: z.enum(["ACTIVE", "SUSPENDED", "DISABLED"]).optional(),
+      departmentId: objectId.nullable().optional(),
       permissions: z.array(z.string().trim().min(3).max(80)).max(30).optional()
     }).strict().refine((value) => Object.keys(value).length > 0, "At least one field is required").parse(req.body);
     const before = await User.findOne({ _id: params.staffId, hospital: req.auth!.hospitalId }).lean();
@@ -69,11 +85,17 @@ staffRouter.patch("/:staffId", requireRole("PROVIDER_OWNER", "ADMIN", "SUPER_ADM
     if (before.roles.includes("PROVIDER_OWNER") && !req.auth!.roles.includes("SUPER_ADMIN")) {
       throw new AppError(403, "The provider owner account cannot be modified here", "FORBIDDEN");
     }
+    if (input.departmentId === null && before.roles.includes("PROVIDER_STAFF")) {
+      throw new AppError(400, "Provider staff must belong to a department", "DEPARTMENT_REQUIRED");
+    }
+    const { departmentId, ...staffFields } = input;
+    const update: Record<string, unknown> = { ...staffFields };
+    if (departmentId !== undefined) update.department = departmentId ? await validateDepartment(departmentId, req.auth!.hospitalId) : null;
     const staff = await User.findOneAndUpdate(
       { _id: params.staffId, hospital: req.auth!.hospitalId },
-      { $set: input },
+      { $set: update },
       { new: true, runValidators: true }
-    ).select("-passwordHash");
+    ).select("-passwordHash").populate("department", "code name type");
     if (!staff) throw new AppError(404, "Staff member not found", "STAFF_NOT_FOUND");
     await writeAudit(req, "STAFF_UPDATED", "User", staff._id, staff.toObject(), before);
     res.json({ data: staff });
