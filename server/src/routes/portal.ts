@@ -1,9 +1,12 @@
 import { Router } from "express";
 import { Decimal } from "decimal.js";
 import { z } from "zod";
+import { appointmentEmailConfigured, sendAppointmentEmail } from "../lib/appointmentEmail.js";
 import { writeAudit } from "../lib/audit.js";
 import { AppError } from "../lib/errors.js";
+import { createContractPdf } from "../lib/pdf.js";
 import { requireAuth, requirePermission, requireRole } from "../middleware/auth.js";
+import { Hospital } from "../models/Hospital.js";
 import {
   Appointment,
   Claim,
@@ -13,6 +16,7 @@ import {
   Notification,
   Report
 } from "../models/Portal.js";
+import { User } from "../models/User.js";
 
 const objectId = z.string().regex(/^[a-f0-9]{24}$/i);
 const money = z.coerce.string().regex(/^\d+(\.\d{1,2})?$/).refine((value) => new Decimal(value).greaterThan(0), "Amount must be positive");
@@ -112,6 +116,32 @@ appointmentRouter.get("/", requirePermission("appointments:read"), async (req, r
     res.json({ data: appointments });
   } catch (error) { next(error); }
 });
+appointmentRouter.get("/availability", requirePermission("appointments:read"), async (req, res, next) => {
+  try {
+    const query = z.object({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      durationMinutes: z.coerce.number().int().min(15).max(240).default(30)
+    }).parse(req.query);
+    const dayStart = new Date(`${query.date}T03:00:00.000Z`); // 09:00 Asia/Dhaka
+    const dayEnd = new Date(`${query.date}T11:00:00.000Z`); // 17:00 Asia/Dhaka
+    const appointments = await Appointment.find({
+      hospital: req.auth!.hospitalId,
+      status: { $in: ["REQUESTED", "APPROVED"] },
+      startsAt: { $gte: dayStart, $lt: dayEnd }
+    }).select("startsAt durationMinutes").lean();
+    const slots: Array<{ startsAt: Date; available: boolean }> = [];
+    for (let start = dayStart.getTime(); start + query.durationMinutes * 60_000 <= dayEnd.getTime(); start += 30 * 60_000) {
+      const finish = start + query.durationMinutes * 60_000;
+      const conflict = appointments.some((appointment) => {
+        const existingStart = appointment.startsAt.getTime();
+        const existingEnd = existingStart + appointment.durationMinutes * 60_000;
+        return start < existingEnd && finish > existingStart;
+      });
+      slots.push({ startsAt: new Date(start), available: !conflict && start > Date.now() });
+    }
+    res.json({ data: slots });
+  } catch (error) { next(error); }
+});
 appointmentRouter.post("/", requirePermission("appointments:create"), async (req, res, next) => {
   try {
     const input = z.object({
@@ -121,9 +151,18 @@ appointmentRouter.post("/", requirePermission("appointments:create"), async (req
       durationMinutes: z.coerce.number().int().min(15).max(480).default(30)
     }).strict().parse(req.body);
     if (input.startsAt.getTime() < Date.now()) throw new AppError(400, "Appointment must be in the future", "INVALID_APPOINTMENT_TIME");
+    const appointmentEnd = new Date(input.startsAt.getTime() + input.durationMinutes * 60_000);
+    const possibleConflicts = await Appointment.find({ hospital: req.auth!.hospitalId, status: { $in: ["REQUESTED", "APPROVED"] }, startsAt: { $lt: appointmentEnd } }).select("startsAt durationMinutes").lean();
+    if (possibleConflicts.some((existing) => existing.startsAt.getTime() + existing.durationMinutes * 60_000 > input.startsAt.getTime())) {
+      throw new AppError(409, "That appointment slot is no longer available", "APPOINTMENT_CONFLICT");
+    }
     const appointment = await Appointment.create({ ...input, hospital: req.auth!.hospitalId, requestedBy: req.auth!.userId });
     await Notification.create({ hospital: req.auth!.hospitalId, type: "APPOINTMENT", title: "New appointment request", message: input.subject, link: "appointments" });
     await writeAudit(req, "APPOINTMENT_REQUESTED", "Appointment", appointment._id, appointment.toObject());
+    if (appointmentEmailConfigured()) {
+      const user = await User.findById(req.auth!.userId).select("fullName email").lean();
+      if (user) void sendAppointmentEmail({ email: user.email, name: user.fullName, subject: input.subject, startsAt: input.startsAt, durationMinutes: input.durationMinutes, kind: "confirmation" }).catch(() => undefined);
+    }
     res.status(201).json({ data: appointment });
   } catch (error) { next(error); }
 });
@@ -142,8 +181,36 @@ appointmentRouter.patch("/:appointmentId", requirePermission("appointments:updat
     if (privilegedStatus && !req.auth!.roles.some((role) => ["ADMIN", "SUPER_ADMIN"].includes(role))) {
       throw new AppError(403, "Administrator approval is required", "FORBIDDEN");
     }
+    if (input.startsAt && input.startsAt < new Date()) throw new AppError(400, "Appointment must be in the future", "INVALID_APPOINTMENT_TIME");
+    if (!req.auth!.roles.some((role) => ["ADMIN", "SUPER_ADMIN"].includes(role)) && !before.requestedBy.equals(req.auth!.userId)) {
+      throw new AppError(403, "You can only change your own appointment", "FORBIDDEN");
+    }
+    if (input.startsAt || input.durationMinutes) {
+      const proposedStart = input.startsAt ?? before.startsAt;
+      const proposedDuration = input.durationMinutes ?? before.durationMinutes;
+      const proposedEnd = new Date(proposedStart.getTime() + proposedDuration * 60_000);
+      const conflicts = await Appointment.find({ _id: { $ne: before._id }, hospital: req.auth!.hospitalId, status: { $in: ["REQUESTED", "APPROVED"] }, startsAt: { $lt: proposedEnd } }).select("startsAt durationMinutes").lean();
+      if (conflicts.some((existing) => existing.startsAt.getTime() + existing.durationMinutes * 60_000 > proposedStart.getTime())) throw new AppError(409, "That appointment slot is no longer available", "APPOINTMENT_CONFLICT");
+    }
     const appointment = await Appointment.findByIdAndUpdate(params.appointmentId, { $set: input }, { new: true, runValidators: true });
     await writeAudit(req, "APPOINTMENT_UPDATED", "Appointment", appointment!._id, appointment!.toObject(), before);
+    res.json({ data: appointment });
+  } catch (error) { next(error); }
+});
+appointmentRouter.post("/:appointmentId/reminder", requirePermission("appointments:update"), async (req, res, next) => {
+  try {
+    const params = z.object({ appointmentId: objectId }).parse(req.params);
+    if (!appointmentEmailConfigured()) throw new AppError(503, "Appointment email is not configured", "APPOINTMENT_EMAIL_UNAVAILABLE");
+    const appointment = await Appointment.findOne({ _id: params.appointmentId, hospital: req.auth!.hospitalId, status: "APPROVED" }).populate("requestedBy", "fullName email");
+    if (!appointment) throw new AppError(404, "Approved appointment not found", "APPOINTMENT_NOT_FOUND");
+    const recipient = appointment.requestedBy as any;
+    try {
+      await sendAppointmentEmail({ email: recipient.email, name: recipient.fullName, subject: appointment.subject, startsAt: appointment.startsAt, durationMinutes: appointment.durationMinutes, kind: "reminder" });
+      appointment.reminderSentAt = new Date(); appointment.reminderStatus = "SENT"; await appointment.save();
+    } catch (error) {
+      appointment.reminderStatus = "FAILED"; await appointment.save(); throw error;
+    }
+    await writeAudit(req, "APPOINTMENT_REMINDER_SENT", "Appointment", appointment._id, { reminderSentAt: appointment.reminderSentAt });
     res.json({ data: appointment });
   } catch (error) { next(error); }
 });
@@ -194,6 +261,7 @@ contractRouter.get("/", requirePermission("contracts:read"), async (req, res, ne
   try {
     const contracts = await Contract.find({ hospital: req.auth!.hospitalId })
       .populate("createdBy signedBy", "fullName email")
+      .populate("document", "name mimeType size")
       .sort({ createdAt: -1 })
       .lean();
     res.json({ data: contracts });
@@ -201,8 +269,9 @@ contractRouter.get("/", requirePermission("contracts:read"), async (req, res, ne
 });
 contractRouter.post("/", requireRole("ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
   try {
-    const input = z.object({ title: z.string().trim().min(2).max(180), body: z.string().trim().min(20).max(30_000) }).strict().parse(req.body);
-    const contract = await Contract.create({ ...input, hospital: req.auth!.hospitalId, createdBy: req.auth!.userId, status: "PENDING" });
+    const input = z.object({ title: z.string().trim().min(2).max(180), body: z.string().trim().min(20).max(30_000), documentId: objectId.optional() }).strict().parse(req.body);
+    if (input.documentId && !await DocumentAsset.exists({ _id: input.documentId, hospital: req.auth!.hospitalId, category: "CONTRACT" })) throw new AppError(404, "Contract document not found", "DOCUMENT_NOT_FOUND");
+    const contract = await Contract.create({ ...input, document: input.documentId, hospital: req.auth!.hospitalId, createdBy: req.auth!.userId, status: "PENDING" });
     await Notification.create({ hospital: req.auth!.hospitalId, type: "CONTRACT", title: "Contract awaiting review", message: input.title, link: "contracts" });
     await writeAudit(req, "CONTRACT_CREATED", "Contract", contract._id, contract.toObject());
     res.status(201).json({ data: contract });
@@ -212,7 +281,7 @@ contractRouter.patch("/:contractId/decision", requirePermission("contracts:sign"
   try {
     const params = z.object({ contractId: objectId }).parse(req.params);
     const input = z.discriminatedUnion("decision", [
-      z.object({ decision: z.literal("ACCEPTED"), signerName: z.string().trim().min(2).max(140), signatureDataUrl: z.string().max(250_000).default("") }),
+      z.object({ decision: z.literal("ACCEPTED"), signerName: z.string().trim().min(2).max(140), signatureDataUrl: z.string().startsWith("data:image/png;base64,").max(250_000) }),
       z.object({ decision: z.literal("REJECTED"), rejectionReason: z.string().trim().min(2).max(500) })
     ]).parse(req.body);
     const before = await Contract.findOne({ _id: params.contractId, hospital: req.auth!.hospitalId, status: "PENDING" }).lean();
@@ -229,12 +298,37 @@ contractRouter.patch("/:contractId/decision", requirePermission("contracts:sign"
     res.json({ data: contract });
   } catch (error) { next(error); }
 });
+contractRouter.get("/:contractId/signed.pdf", requirePermission("contracts:read"), async (req, res, next) => {
+  try {
+    const params = z.object({ contractId: objectId }).parse(req.params);
+    const contract = await Contract.findOne({ _id: params.contractId, hospital: req.auth!.hospitalId, status: "ACCEPTED" }).select("+signatureDataUrl").lean();
+    if (!contract) throw new AppError(404, "Accepted contract not found", "CONTRACT_NOT_FOUND");
+    const hospital = await Hospital.findById(req.auth!.hospitalId).select("name").lean();
+    const pdf = await createContractPdf({ hospitalName: hospital?.name ?? "Healthcare organization", title: contract.title, body: contract.body, version: contract.version, status: contract.status, signerName: contract.signerName, signedAt: contract.signedAt, signatureDataUrl: contract.signatureDataUrl });
+    res.type("application/pdf").attachment(`${contract.title.replace(/[^a-z0-9-]+/gi, "-")}-signed.pdf`).send(pdf);
+  } catch (error) { next(error); }
+});
+contractRouter.get("/:contractId/document", requirePermission("contracts:read"), async (req, res, next) => {
+  try {
+    const params = z.object({ contractId: objectId }).parse(req.params);
+    const contract = await Contract.findOne({ _id: params.contractId, hospital: req.auth!.hospitalId }).select("document").lean();
+    if (!contract?.document) throw new AppError(404, "Contract document not found", "DOCUMENT_NOT_FOUND");
+    const document = await DocumentAsset.findOne({ _id: contract.document, hospital: req.auth!.hospitalId }).select("+data");
+    if (!document) throw new AppError(404, "Contract document not found", "DOCUMENT_NOT_FOUND");
+    res.setHeader("Content-Type", document.mimeType); res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(document.name)}`); res.send(document.data);
+  } catch (error) { next(error); }
+});
 
 export const reportRouter = Router();
 reportRouter.use(requireAuth);
 reportRouter.get("/", requirePermission("reports:read"), async (req, res, next) => {
   try {
-    const reports = await Report.find({ hospital: req.auth!.hospitalId }).populate("document createdBy", "name mimeType size fullName email").sort({ periodStart: -1 }).lean();
+    const query = z.object({ search: z.string().trim().max(120).default(""), reportType: z.enum(["MONTHLY_BILLING", "FINANCIAL", "CLAIMS", "CUSTOM"]).optional(), from: z.coerce.date().optional(), to: z.coerce.date().optional() }).parse(req.query);
+    const filter: Record<string, unknown> = { hospital: req.auth!.hospitalId };
+    if (query.search) filter.$or = [{ title: { $regex: query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" } }, { summary: { $regex: query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" } }];
+    if (query.reportType) filter.reportType = query.reportType;
+    if (query.from || query.to) filter.periodStart = { ...(query.from ? { $gte: query.from } : {}), ...(query.to ? { $lte: query.to } : {}) };
+    const reports = await Report.find(filter).populate("document createdBy", "name mimeType size fullName email").sort({ periodStart: -1 }).lean();
     res.json({ data: reports });
   } catch (error) { next(error); }
 });
@@ -256,6 +350,16 @@ reportRouter.post("/", requireRole("ADMIN", "SUPER_ADMIN"), async (req, res, nex
     await Notification.create({ hospital: req.auth!.hospitalId, type: "REPORT", title: "New report available", message: input.title, link: "reports" });
     await writeAudit(req, "REPORT_CREATED", "Report", report._id, report.toObject());
     res.status(201).json({ data: report });
+  } catch (error) { next(error); }
+});
+reportRouter.get("/:reportId/download", requirePermission("reports:read"), async (req, res, next) => {
+  try {
+    const params = z.object({ reportId: objectId }).parse(req.params);
+    const report = await Report.findOne({ _id: params.reportId, hospital: req.auth!.hospitalId }).select("document").lean();
+    if (!report?.document) throw new AppError(404, "Report attachment not found", "DOCUMENT_NOT_FOUND");
+    const document = await DocumentAsset.findOne({ _id: report.document, hospital: req.auth!.hospitalId }).select("+data");
+    if (!document) throw new AppError(404, "Report attachment not found", "DOCUMENT_NOT_FOUND");
+    res.setHeader("Content-Type", document.mimeType); res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(document.name)}`); res.send(document.data);
   } catch (error) { next(error); }
 });
 

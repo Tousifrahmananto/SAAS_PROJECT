@@ -119,6 +119,26 @@ describe("App", () => {
     expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({ role: "PROVIDER_STAFF", departmentId: "64b000000000000000000010" }));
   });
 
+  it("exposes document rename and delete controls to permitted staff", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/auth/login")) return new Response(JSON.stringify({ token: "document-token", user: { fullName: "Document Manager", email: "docs@example.com", roles: ["PROVIDER_STAFF"], permissions: ["documents:read", "documents:update", "documents:delete"] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/api/dashboard")) return new Response(JSON.stringify({ data: { billed: "0.00", collected: "0.00", outstanding: "0.00", invoices: 0, patients: 0, openEncounters: 0, activeStaff: 1, upcomingAppointments: 0, claims: {}, monthly: [] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.endsWith("/api/documents") && !options?.method) return new Response(JSON.stringify({ data: [{ _id: "document-1", name: "report.pdf", category: "REPORT", mimeType: "application/pdf", size: 100, createdAt: "2026-08-20" }] }), { status: 200, headers: { "content-type": "application/json" } });
+      if (options?.method === "DELETE") return new Response(null, { status: 204 });
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock); vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "docs@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "long-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Documents" }));
+    expect(await screen.findByRole("button", { name: "Rename" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/documents/document-1"), expect.objectContaining({ method: "DELETE" })));
+  });
+
   it("creates a manual invoice without losing the submitted form reference", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
       const url = String(input);

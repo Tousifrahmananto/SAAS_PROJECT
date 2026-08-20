@@ -8,8 +8,8 @@ This audit compares the current MERN implementation with the submitted project d
 
 - Client type check: passed
 - Server type check: passed
-- Client tests: 9 passed
-- Server tests: 14 passed
+- Client tests: 10 passed
+- Server tests: 17 passed
 - Production build: passed
 
 ## Module status
@@ -19,14 +19,14 @@ This audit compares the current MERN implementation with the submitted project d
 | Authentication and authorization | Partial | Registration, login, JWT sessions, logout, temporary passwords, password reset, roles and permissions | Optional MFA is not implemented |
 | Organization and staff | Complete for the core workflow | Organization profile/status, staff creation, role/permission assignment, staff status, department assignment and reassignment | A dedicated permission editor for an existing staff account would improve administration |
 | Departments | Complete | Department catalog, unique department code per hospital, active/inactive state, and staff-to-department reference | Existing legacy staff without departments should be assigned from the Staff page |
-| Revenue dashboard | Partial | Current patient, encounter, staff, charge, invoice, payment, claim, appointment and notification summaries | Date-range filters, monthly expense summaries and financial charts are not implemented |
-| Documents | Partial | Upload, category, ownership, access control, download, API rename and API delete | Rename and delete controls are not exposed on the portal page |
-| Appointments | Partial | Booking, list, API reschedule/status update, admin approve/reject | Availability slots, calendar, staff/patient reschedule and cancel controls, and email reminders are not complete |
+| Revenue dashboard | Complete | Date-filtered billing, collection and outstanding summaries, monthly tables/charts, invoice-status totals and operational statistics | The schema does not currently model hospital operating expenses |
+| Documents | Complete | Upload, category, ownership, access control, download, rename and confirmed deletion in the portal | None for the submitted workflow |
+| Appointments | Complete for the core workflow | Conflict-aware availability slots, booking, calendar, reschedule/cancel, admin decisions, confirmation email and reminder delivery | Automatic background reminders depend on an always-running scheduler; the portal provides an explicit send-reminder action |
 | Messaging and notifications | Mostly complete | Conversations, replies, history, notification list and mark-read | Mark-unread and conversation-closing controls are not exposed |
-| Contracts | Partial | Admin agreement creation, provider review, accept/reject and signer record | Contract file upload, signature capture and downloadable signed-copy generation are not complete |
+| Contracts | Complete | Agreement creation, optional contract PDF upload/download, provider review, drawn electronic signature, accept/reject and generated signed PDF | None for the submitted workflow |
 | Invoices and payments | Complete for the academic sandbox | Guided item selection, quantities/days, patient contact details, PDF, email delivery, payment status, public checkout, SSLCOMMERZ sandbox, reconciliation and refunds | Production merchant onboarding is intentionally outside the academic sandbox scope |
-| Reports and claims | Partial | Report records, report-document API reference, claim workflow/status/rejection reasons and CSV export | Report upload/download selection and portal search/filter controls are incomplete |
-| Super-admin tools | Partial | Organization review/status control plus module-level administrative actions | A single central console for every user/document/appointment/invoice/report/contract is not implemented |
+| Reports and claims | Complete | Report upload/download, search/type/date filters, claim workflow/status/rejection reasons and CSV export | None for the submitted workflow |
+| Super-admin tools | Complete for centralized oversight | Platform statistics, organization review/status, cross-organization staff/documents/appointments/invoices/reports/contracts and staff status control | Destructive modification of financial records remains intentionally restricted |
 | Audit logs | Partial | Stored audit events, API action/date filters and CSV export | Portal search/date filters and PDF export are not implemented |
 
 ## Staff and department workflow
@@ -45,9 +45,6 @@ The shared role-based portal is ready for the core staff workflow. Staff do not 
 
 ## Recommended completion order
 
-1. Finish appointment availability, reschedule/cancel UI and reminders.
-2. Add document rename/delete and report attachment/download UI.
-3. Add dashboard charts and date filters.
-4. Complete contract file/signature/signed-copy workflow.
-5. Expand the super-admin console and audit-log filters/export formats.
-6. Add optional MFA last, because it is described as optional.
+1. Add audit-log portal filters and PDF export.
+2. Add notification mark-unread and conversation-closing controls.
+3. Add optional MFA last, because it is described as optional.

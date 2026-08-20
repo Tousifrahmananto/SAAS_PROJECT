@@ -147,4 +147,29 @@ describe("portal authorization", () => {
     expect(response.status).toBe(400);
     expect(response.text).toBe("INVALID");
   });
+
+  it("rejects an inverted dashboard date range before aggregation", async () => {
+    const response = await request(app)
+      .get("/api/dashboard?from=2026-08-20&to=2026-08-01")
+      .set("authorization", `Bearer ${token(["PROVIDER_OWNER"])}`);
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("INVALID_DATE_RANGE");
+  });
+
+  it("validates appointment availability dates before database access", async () => {
+    const response = await request(app)
+      .get("/api/appointments/availability?date=tomorrow")
+      .set("authorization", `Bearer ${token(["PROVIDER_STAFF"], ["appointments:read"])}`);
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("requires a drawn signature when accepting a contract", async () => {
+    const response = await request(app)
+      .patch(`/api/contracts/${new Types.ObjectId()}/decision`)
+      .set("authorization", `Bearer ${token(["PROVIDER_STAFF"], ["contracts:sign"])}`)
+      .send({ decision: "ACCEPTED", signerName: "Test Signer", signatureDataUrl: "" });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
 });

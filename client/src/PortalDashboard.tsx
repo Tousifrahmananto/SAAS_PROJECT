@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiBaseUrl, type Session } from "./App";
 
 type Row = Record<string, any>;
@@ -13,6 +13,10 @@ const navigation = [
 
 function formValues(event: FormEvent<HTMLFormElement>) {
   return Object.fromEntries(new FormData(event.currentTarget).entries());
+}
+
+function fileDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("Could not read file")); reader.readAsDataURL(file); });
 }
 
 function decimal(value: any) {
@@ -94,13 +98,13 @@ export function PortalDashboard({ session, onLogout }: { session: Session; onLog
     organization: <OrganizationPage api={api} editable={isOwner || isAdmin} />,
     clinical: <ClinicalPage api={api} canManageCatalog={privileged} canCreatePatient={hasPermission("patients:create")} canCreateEncounter={hasPermission("encounters:create")} />,
     staff: <StaffPage api={api} editable={isOwner || isAdmin} canCreateAdmin={isAdmin} />,
-    documents: <DocumentsPage api={api} token={session.token} canCreate={hasPermission("documents:create")} />,
-    appointments: <AppointmentsPage api={api} isAdmin={isAdmin} canCreate={hasPermission("appointments:create")} />,
+    documents: <DocumentsPage api={api} token={session.token} canCreate={hasPermission("documents:create")} canUpdate={hasPermission("documents:update")} canDelete={hasPermission("documents:delete")} />,
+    appointments: <AppointmentsPage api={api} isAdmin={isAdmin} canCreate={hasPermission("appointments:create")} canUpdate={hasPermission("appointments:update")} />,
     messages: <MessagesPage api={api} canCreate={hasPermission("messages:create")} />,
-    contracts: <ContractsPage api={api} isAdmin={isAdmin} canSign={hasPermission("contracts:sign")} />,
+    contracts: <ContractsPage api={api} token={session.token} isAdmin={isAdmin} canSign={hasPermission("contracts:sign")} canUpload={hasPermission("documents:create")} />,
     invoices: <InvoicesPage api={api} token={session.token} canCreate={privileged || roles.includes("BILLING_ADMIN")} canPay={hasPermission("payments:create")} canUseCatalog={hasPermission("catalog:read")} />,
     payments: <PaymentsPage api={api} token={session.token} isAdmin={isAdmin} canRefund={hasPermission("payments:refund")} />,
-    reports: <ReportsPage api={api} isAdmin={isAdmin} />,
+    reports: <ReportsPage api={api} token={session.token} isAdmin={isAdmin} canUpload={hasPermission("documents:create")} />,
     claims: <ClaimsPage api={api} token={session.token} isAdmin={isAdmin} canCreate={hasPermission("claims:create")} />,
     notifications: <NotificationsPage api={api} />,
     audit: <AuditPage api={api} token={session.token} />,
@@ -127,13 +131,19 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 }
 
 function DashboardPage({ api, role, navigate }: { api: Api; role?: string; navigate: (view: any) => void }) {
+  const now = new Date(); const initialFrom = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().slice(0, 10);
+  const [filters, setFilters] = useState({ from: initialFrom, to: now.toISOString().slice(0, 10) });
   const [data, setData] = useState<Row | null>(null); const [error, setError] = useState("");
-  useEffect(() => { api("/dashboard").then((value) => setData(value.data)).catch((reason) => setError(reason.message)); }, [api]);
+  const load = useCallback(async () => { setError(""); setData(null); try { setData((await api(`/dashboard?from=${filters.from}&to=${filters.to}T23:59:59.999Z`)).data); } catch (reason) { setError(reason instanceof Error ? reason.message : "Dashboard failed"); } }, [api, filters]);
+  useEffect(() => { void load(); }, [load]);
   if (error) return <div className="error">{error}</div>;
   if (!data) return <div className="empty-state">Loading dashboard...</div>;
+  const monthly = data.monthly ?? []; const maximum = Math.max(1, ...monthly.flatMap((item: Row) => [Number(item.billed), Number(item.collected)]));
   return <>
+    <section className="filter-bar"><label>From<input type="date" value={filters.from} onChange={(event) => setFilters((value) => ({ ...value, from: event.target.value }))} /></label><label>To<input type="date" value={filters.to} onChange={(event) => setFilters((value) => ({ ...value, to: event.target.value }))} /></label><span>Financial figures use the selected date range.</span></section>
     <section className="metrics"><Metric label="Billed" value={`BDT ${decimal(data.billed)}`} detail={`${data.invoices} invoices`} /><Metric label="Collected" value={`BDT ${decimal(data.collected)}`} detail="Validated payments" /><Metric label="Outstanding" value={`BDT ${decimal(data.outstanding)}`} detail="Open balance" /><Metric label="Your role" value={role?.replaceAll("_", " ") ?? "USER"} detail="API-enforced access" /></section>
-    <section className="summary-grid"><article className="panel-card"><h3>Operations</h3><dl><div><dt>Patients</dt><dd>{data.patients}</dd></div><div><dt>Open encounters</dt><dd>{data.openEncounters}</dd></div><div><dt>Active staff</dt><dd>{data.activeStaff}</dd></div><div><dt>Upcoming appointments</dt><dd>{data.upcomingAppointments}</dd></div></dl></article><article className="panel-card"><h3>Claims</h3><dl>{Object.entries(data.claims ?? {}).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>)}</dl></article></section>
+    <section className="panel-card"><h2>Monthly revenue</h2><p className="field-help">Blue represents billed invoices; green represents collected payments.</p>{monthly.length ? <div className="bar-chart" aria-label="Monthly revenue chart">{monthly.map((item: Row) => <div className="bar-group" key={item.month}><div className="bar-values"><span className="bar billed-bar" style={{ height: `${Math.max(4, Number(item.billed) / maximum * 150)}px` }} title={`Billed BDT ${item.billed}`} /><span className="bar collected-bar" style={{ height: `${Math.max(4, Number(item.collected) / maximum * 150)}px` }} title={`Collected BDT ${item.collected}`} /></div><strong>{item.month}</strong><small>{item.invoices} invoice(s)</small></div>)}</div> : <div className="empty-state">No financial records in this period.</div>}<DataTable columns={["month", "billed", "collected", "outstanding", "invoices"]} rows={monthly.map((item: Row) => ({ ...item, _id: item.month }))} /></section>
+    <section className="summary-grid"><article className="panel-card"><h3>Operations</h3><dl><div><dt>Patients</dt><dd>{data.patients}</dd></div><div><dt>Open encounters</dt><dd>{data.openEncounters}</dd></div><div><dt>Active staff</dt><dd>{data.activeStaff}</dd></div><div><dt>Upcoming appointments</dt><dd>{data.upcomingAppointments}</dd></div></dl></article><article className="panel-card"><h3>Invoice status</h3><dl>{data.invoiceStatuses?.map((item: Row) => <div key={item.status}><dt>{item.status}</dt><dd>{item.count} / BDT {decimal(item.amount)}</dd></div>)}</dl><h3>Claims</h3><dl>{Object.entries(data.claims ?? {}).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>)}</dl></article></section>
     <section className="panel"><div><span className="eyebrow">Next action</span><h2>Keep your provider workspace current</h2><p>Review invoices, claim outcomes, scheduled meetings, and outstanding documents.</p></div><button className="primary" onClick={() => navigate("invoices")}>Open invoices</button></section>
   </>;
 }
@@ -294,10 +304,12 @@ function StaffPage({ api, editable, canCreateAdmin }: { api: Api; editable: bool
   </section>}<DataTable columns={["fullName", "email", "phone", "employeeNo", "department", "roles", "status", "lastLoginAt"]} rows={resource.rows} action={editable ? (row) => row.roles?.includes("PROVIDER_OWNER") ? null : <span className="row-actions"><select aria-label={`Department for ${row.fullName}`} value={row.department?._id ?? ""} onChange={(event) => void updateStaff(row, { departmentId: event.target.value || null })}><option value="" disabled={row.roles?.includes("PROVIDER_STAFF")}>{row.roles?.includes("PROVIDER_STAFF") ? "Select department" : "No department"}</option>{departments.rows.map((department) => <option key={department._id} value={department._id}>{department.code} — {department.name}</option>)}</select><select aria-label={`Status for ${row.fullName}`} value={row.status} onChange={(event) => void updateStaff(row, { status: event.target.value })}><option>ACTIVE</option><option>SUSPENDED</option><option>DISABLED</option></select></span> : undefined} /></>;
 }
 
-function DocumentsPage({ api, token, canCreate }: { api: Api; token: string; canCreate: boolean }) {
+function DocumentsPage({ api, token, canCreate, canUpdate, canDelete }: { api: Api; token: string; canCreate: boolean; canUpdate: boolean; canDelete: boolean }) {
   const resource = useResource(api, "/documents"); const [error, setError] = useState("");
   async function upload(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; const values = formValues(event); const file = values.file as File; if (!file?.size) return; setError(""); try { const contentBase64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("Could not read file")); reader.readAsDataURL(file); }); await api("/documents", { method: "POST", body: JSON.stringify({ name: file.name, category: values.category, mimeType: file.type, contentBase64 }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Upload failed"); } }
   async function download(row: Row) { const response = await fetch(`${apiBaseUrl}/api/documents/${row._id}/download`, { headers: { authorization: `Bearer ${token}` } }); if (!response.ok) { setError("Download failed"); return; } const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a"); link.href = url; link.download = row.name; link.click(); URL.revokeObjectURL(url); }
+  async function rename(row: Row) { const name = window.prompt("New document name", row.name); if (!name || name === row.name) return; try { await api(`/documents/${row._id}`, { method: "PATCH", body: JSON.stringify({ name }) }); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Rename failed"); } }
+  async function remove(row: Row) { if (!window.confirm(`Delete ${row.name}? This cannot be undone.`)) return; try { await api(`/documents/${row._id}`, { method: "DELETE" }); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Delete failed"); } }
   return <>{canCreate && <section className="panel-card">
     <h2 style={{ marginBottom: "16px" }}>Upload document</h2>
     <form className="profile-form" style={{ marginTop: 0 }} onSubmit={upload}>
@@ -312,26 +324,33 @@ function DocumentsPage({ api, token, canCreate }: { api: Api; token: string; can
       </div>
     </form>
     {error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}
-  </section>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["name", "category", "mimeType", "size", "createdAt"]} rows={resource.rows} action={(row) => <button onClick={() => void download(row)}>Download</button>} /></>;
+  </section>}{error && !canCreate && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["name", "category", "mimeType", "size", "createdAt"]} rows={resource.rows} action={(row) => <span className="row-actions"><button onClick={() => void download(row)}>Download</button>{canUpdate && <button onClick={() => void rename(row)}>Rename</button>}{canDelete && <button className="danger-button" onClick={() => void remove(row)}>Delete</button>}</span>} /></>;
 }
 
-function AppointmentsPage({ api, isAdmin, canCreate }: { api: Api; isAdmin: boolean; canCreate: boolean }) {
+function AppointmentsPage({ api, isAdmin, canCreate, canUpdate }: { api: Api; isAdmin: boolean; canCreate: boolean; canUpdate: boolean }) {
   const resource = useResource(api, "/appointments"); const [error, setError] = useState("");
-  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { const values = formValues(event); await api("/appointments", { method: "POST", body: JSON.stringify({ ...values, startsAt: new Date(String(values.startsAt)).toISOString(), durationMinutes: Number(values.durationMinutes) }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Booking failed"); } }
-  async function decide(id: string, status: string) { try { await api(`/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Update failed"); } }
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10); const [date, setDate] = useState(tomorrow); const [duration, setDuration] = useState("30"); const [slot, setSlot] = useState(""); const [slots, setSlots] = useState<Row[]>([]);
+  useEffect(() => { api(`/appointments/availability?date=${date}&durationMinutes=${duration}`).then((result) => { const available = result.data?.filter((item: Row) => item.available) ?? []; setSlots(available); setSlot(available[0]?.startsAt ?? ""); }).catch((reason) => setError(reason.message)); }, [api, date, duration]);
+  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { const values = formValues(event); await api("/appointments", { method: "POST", body: JSON.stringify({ subject: values.subject, description: values.description, startsAt: slot, durationMinutes: Number(duration) }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Booking failed"); } }
+  async function update(id: string, changes: Row) { try { await api(`/appointments/${id}`, { method: "PATCH", body: JSON.stringify(changes) }); setError(""); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Update failed"); } }
+  async function decide(id: string, status: string) { const decisionNote = ["REJECTED", "CANCELLED"].includes(status) ? window.prompt("Reason or note") ?? "" : ""; if (["REJECTED", "CANCELLED"].includes(status) && !decisionNote) return; await update(id, { status, decisionNote }); }
+  async function reschedule(row: Row) { const local = new Date(row.startsAt); local.setMinutes(local.getMinutes() - local.getTimezoneOffset()); const startsAt = window.prompt("New date and time (YYYY-MM-DDTHH:mm)", local.toISOString().slice(0, 16)); if (!startsAt) return; await update(row._id, { startsAt: new Date(startsAt).toISOString(), status: "REQUESTED" }); }
+  async function remind(row: Row) { try { await api(`/appointments/${row._id}/reminder`, { method: "POST", body: "{}" }); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Reminder failed"); } }
+  const calendar = Object.entries(resource.rows.reduce<Record<string, Row[]>>((groups, row) => { const key = new Date(row.startsAt).toLocaleDateString(); (groups[key] ??= []).push(row); return groups; }, {}));
   return <>{canCreate && <section className="panel-card">
     <h2 style={{ marginBottom: "16px" }}>Book appointment</h2>
     <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
       <label>Subject<input name="subject" placeholder="e.g. Initial Consultation" required /></label>
-      <label>Date & Time<input name="startsAt" type="datetime-local" required /></label>
-      <label>Duration (minutes)<input name="durationMinutes" type="number" min="15" defaultValue="30" /></label>
+      <label>Date<input name="date" type="date" min={new Date().toISOString().slice(0, 10)} value={date} onChange={(event) => setDate(event.target.value)} required /></label>
+      <label>Duration<select name="durationMinutes" value={duration} onChange={(event) => setDuration(event.target.value)}><option value="30">30 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option><option value="120">120 minutes</option></select></label>
+      <label>Available time<select aria-label="Available time" value={slot} onChange={(event) => setSlot(event.target.value)} required><option value="">No slot selected</option>{slots.map((item) => <option key={item.startsAt} value={item.startsAt}>{new Date(item.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</option>)}</select></label>
       <label>Notes <span style={{fontWeight: "normal", color: "#667085"}}>(Optional)</span><input name="description" placeholder="Any special requests" /></label>
       <div className="wide profile-submit" style={{ marginTop: "8px" }}>
-        <button className="primary">Request appointment</button>
+        <button className="primary" disabled={!slot}>Request appointment</button>
       </div>
     </form>
     {error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}
-  </section>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["subject", "startsAt", "durationMinutes", "status", "decisionNote"]} rows={resource.rows} action={isAdmin ? (row) => <span className="row-actions"><button onClick={() => void decide(row._id, "APPROVED")}>Approve</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></span> : undefined} /></>;
+  </section>}{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><section className="panel-card"><h2>Appointment calendar</h2><div className="appointment-calendar">{calendar.map(([day, rows]) => <article key={day}><h3>{day}</h3>{rows.map((row) => <div className="calendar-event" key={row._id}><strong>{new Date(row.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong><span>{row.subject}</span><small>{row.status}</small></div>)}</article>)}</div></section><DataTable columns={["subject", "requestedBy", "startsAt", "durationMinutes", "status", "decisionNote", "reminderStatus"]} rows={resource.rows} action={(row) => <span className="row-actions">{isAdmin && row.status === "REQUESTED" && <><button onClick={() => void decide(row._id, "APPROVED")}>Approve</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></>}{canUpdate && ["REQUESTED", "APPROVED"].includes(row.status) && <><button onClick={() => void reschedule(row)}>Reschedule</button><button onClick={() => void decide(row._id, "CANCELLED")}>Cancel</button></>}{isAdmin && row.status === "APPROVED" && <button onClick={() => void remind(row)}>Send reminder</button>}</span>} /></>;
 }
 
 function MessagesPage({ api, canCreate }: { api: Api; canCreate: boolean }) {
@@ -351,20 +370,31 @@ function MessagesPage({ api, canCreate }: { api: Api; canCreate: boolean }) {
   </section>}<PageState busy={resource.busy} error={resource.error} /><div className="card-list">{resource.rows.map((row) => <article className="resource-card" key={row._id}><span className="status-badge">{row.status}</span><h3>{row.subject}</h3><div className="message-history">{row.messages?.map((message: Row) => <p key={message._id}><strong>{message.sender?.fullName ?? "User"}:</strong> {message.body}</p>)}</div>{canCreate && <button onClick={() => void reply(row)}>Reply</button>}</article>)}</div></>;
 }
 
-function ContractsPage({ api, isAdmin, canSign }: { api: Api; isAdmin: boolean; canSign: boolean }) {
-  const resource = useResource(api, "/contracts"); const [error, setError] = useState("");
-  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { await api("/contracts", { method: "POST", body: JSON.stringify(formValues(event)) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Create failed"); } }
-  async function decide(id: string, decision: string) { const signerName = decision === "ACCEPTED" ? window.prompt("Type the signer's full name") : undefined; const rejectionReason = decision === "REJECTED" ? window.prompt("Reason for rejection") : undefined; if (decision === "ACCEPTED" && !signerName || decision === "REJECTED" && !rejectionReason) return; await api(`/contracts/${id}/decision`, { method: "PATCH", body: JSON.stringify(decision === "ACCEPTED" ? { decision, signerName, signatureDataUrl: "" } : { decision, rejectionReason }) }); await resource.load(); }
+function SignaturePad({ onSign, onCancel }: { onSign: (name: string, signature: string) => void; onCancel: () => void }) {
+  const canvas = useRef<HTMLCanvasElement>(null); const drawing = useRef(false); const [name, setName] = useState(""); const [hasInk, setHasInk] = useState(false);
+  function point(event: any) { const rect = canvas.current!.getBoundingClientRect(); return { x: (event.clientX - rect.left) * canvas.current!.width / rect.width, y: (event.clientY - rect.top) * canvas.current!.height / rect.height }; }
+  function start(event: any) { drawing.current = true; const context = canvas.current!.getContext("2d")!; const current = point(event); context.beginPath(); context.moveTo(current.x, current.y); event.currentTarget.setPointerCapture(event.pointerId); }
+  function move(event: any) { if (!drawing.current) return; const context = canvas.current!.getContext("2d")!; const current = point(event); context.lineWidth = 2.5; context.lineCap = "round"; context.strokeStyle = "#172033"; context.lineTo(current.x, current.y); context.stroke(); setHasInk(true); }
+  function clear() { canvas.current!.getContext("2d")!.clearRect(0, 0, canvas.current!.width, canvas.current!.height); setHasInk(false); }
+  return <div className="signature-panel"><label>Signer full name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Type the legal name" /></label><span>Draw signature below</span><canvas ref={canvas} width="640" height="180" onPointerDown={start} onPointerMove={move} onPointerUp={() => { drawing.current = false; }} /><div className="row-actions"><button onClick={clear}>Clear</button><button onClick={onCancel}>Cancel</button><button className="primary" disabled={name.trim().length < 2 || !hasInk} onClick={() => onSign(name.trim(), canvas.current!.toDataURL("image/png"))}>Accept and sign</button></div></div>;
+}
+
+function ContractsPage({ api, token, isAdmin, canSign, canUpload }: { api: Api; token: string; isAdmin: boolean; canSign: boolean; canUpload: boolean }) {
+  const resource = useResource(api, "/contracts"); const [error, setError] = useState(""); const [signingId, setSigningId] = useState("");
+  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { const values = formValues(event); const file = values.file as File; let documentId: string | undefined; if (file?.size) { const uploaded = await api("/documents", { method: "POST", body: JSON.stringify({ name: file.name, category: "CONTRACT", mimeType: file.type, contentBase64: await fileDataUrl(file) }) }); documentId = uploaded.data._id; } await api("/contracts", { method: "POST", body: JSON.stringify({ title: values.title, body: values.body, ...(documentId ? { documentId } : {}) }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Create failed"); } }
+  async function sign(id: string, signerName: string, signatureDataUrl: string) { try { await api(`/contracts/${id}/decision`, { method: "PATCH", body: JSON.stringify({ decision: "ACCEPTED", signerName, signatureDataUrl }) }); setSigningId(""); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Signature failed"); } }
+  async function reject(id: string) { const rejectionReason = window.prompt("Reason for rejection"); if (!rejectionReason) return; await api(`/contracts/${id}/decision`, { method: "PATCH", body: JSON.stringify({ decision: "REJECTED", rejectionReason }) }); await resource.load(); }
   return <>{isAdmin && <section className="panel-card">
     <h2 style={{ marginBottom: "16px" }}>Create agreement</h2>
     <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
       <label className="wide">Contract title<input name="title" placeholder="e.g. Master Service Agreement 2026" required /></label>
       <label className="wide">Agreement terms<textarea name="body" placeholder="Enter the full legal terms of the agreement here..." minLength={20} rows={8} required /></label>
+      {canUpload && <label className="wide">Supporting contract PDF (optional)<input name="file" type="file" accept="application/pdf" /></label>}
       <div className="wide profile-submit" style={{ marginTop: "8px" }}>
         <button className="primary">Publish for signature</button>
       </div>
     </form>
-  </section>}{error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}<PageState busy={resource.busy} error={resource.error} />{!resource.busy && !resource.error && !resource.rows.length ? <div className="empty-state">No agreements yet.</div> : <div className="card-list">{resource.rows.map((row) => <article className="resource-card" key={row._id}><span className="status-badge">{row.status}</span><h3>{row.title}</h3><p>{row.body}</p>{row.status === "PENDING" && canSign && !isAdmin && <div className="row-actions"><button className="primary" onClick={() => void decide(row._id, "ACCEPTED")}>Accept & sign</button><button onClick={() => void decide(row._id, "REJECTED")}>Reject</button></div>}</article>)}</div>}</>;
+  </section>}{error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}<PageState busy={resource.busy} error={resource.error} />{!resource.busy && !resource.error && !resource.rows.length ? <div className="empty-state">No agreements yet.</div> : <div className="card-list">{resource.rows.map((row) => <article className="resource-card" key={row._id}><span className="status-badge">{row.status}</span><h3>{row.title}</h3><p>{row.body}</p><div className="row-actions">{row.document && <button onClick={() => void downloadAuthenticated(`/contracts/${row._id}/document`, row.document.name, token)}>Original file</button>}{row.status === "ACCEPTED" && <button onClick={() => void downloadAuthenticated(`/contracts/${row._id}/signed.pdf`, `${row.title}-signed.pdf`, token)}>Signed PDF</button>}</div>{signingId === row._id ? <SignaturePad onCancel={() => setSigningId("")} onSign={(name, signature) => void sign(row._id, name, signature)} /> : row.status === "PENDING" && canSign && !isAdmin && <div className="row-actions"><button className="primary" onClick={() => setSigningId(row._id)}>Accept &amp; sign</button><button onClick={() => void reject(row._id)}>Reject</button></div>}</article>)}</div>}</>;
 }
 
 type InvoiceBuilderLine = {
@@ -567,9 +597,10 @@ function PaymentsPage({ api, token, isAdmin, canRefund }: { api: Api; token: str
   </section><DataTable columns={["businessDate", "externalReference", "expectedAmount", "settledAmount", "varianceAmount", "status"]} rows={reconciliation.rows} /></>}</>;
 }
 
-function ReportsPage({ api, isAdmin }: { api: Api; isAdmin: boolean }) {
-  const resource = useResource(api, "/reports"); const [error, setError] = useState("");
-  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { await api("/reports", { method: "POST", body: JSON.stringify(formValues(event)) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Report failed"); } }
+function ReportsPage({ api, token, isAdmin, canUpload }: { api: Api; token: string; isAdmin: boolean; canUpload: boolean }) {
+  const [query, setQuery] = useState(""); const resource = useResource(api, `/reports${query ? `?${query}` : ""}`); const [error, setError] = useState("");
+  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; try { const values = formValues(event); const file = values.file as File; let documentId: string | undefined; if (file?.size) { const uploaded = await api("/documents", { method: "POST", body: JSON.stringify({ name: file.name, category: "REPORT", mimeType: file.type, contentBase64: await fileDataUrl(file) }) }); documentId = uploaded.data._id; } await api("/reports", { method: "POST", body: JSON.stringify({ title: values.title, reportType: values.reportType, periodStart: values.periodStart, periodEnd: values.periodEnd, summary: values.summary, ...(documentId ? { documentId } : {}) }) }); form.reset(); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Report failed"); } }
+  function filter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const values = formValues(event); const params = new URLSearchParams(); Object.entries(values).forEach(([key, value]) => { if (value) params.set(key, String(value)); }); setQuery(params.toString()); }
   return <>{isAdmin && <section className="panel-card">
     <h2 style={{ marginBottom: "16px" }}>Publish report</h2>
     <form className="profile-form" style={{ marginTop: 0 }} onSubmit={create}>
@@ -582,11 +613,12 @@ function ReportsPage({ api, isAdmin }: { api: Api; isAdmin: boolean }) {
       <label>Period start<input name="periodStart" type="date" required /></label>
       <label>Period end<input name="periodEnd" type="date" required /></label>
       <label className="wide">Summary<input name="summary" placeholder="Brief summary of the report contents" /></label>
+      {canUpload && <label className="wide">Report file (optional)<input name="file" type="file" accept=".pdf,.csv,.xlsx" /></label>}
       <div className="wide profile-submit" style={{ marginTop: "8px" }}>
         <button className="primary">Publish report</button>
       </div>
     </form>
-  </section>}{error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["title", "reportType", "periodStart", "periodEnd", "summary", "createdAt"]} rows={resource.rows} /></>;
+  </section>}<section className="filter-bar"><form className="inline-form" onSubmit={filter}><input name="search" aria-label="Search reports" placeholder="Search title or summary" /><select name="reportType" aria-label="Report type filter"><option value="">All report types</option><option>MONTHLY_BILLING</option><option>FINANCIAL</option><option>CLAIMS</option><option>CUSTOM</option></select><input name="from" aria-label="Report period from" type="date" /><input name="to" aria-label="Report period to" type="date" /><button>Apply filters</button><button type="button" onClick={() => setQuery("")}>Clear</button></form></section>{error && <div className="error" style={{ marginTop: "16px" }}>{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["title", "reportType", "periodStart", "periodEnd", "summary", "document", "createdAt"]} rows={resource.rows} action={(row) => row.document ? <button onClick={() => void downloadAuthenticated(`/reports/${row._id}/download`, row.document.name, token)}>Download report</button> : <small>No attachment</small>} /></>;
 }
 
 function ClaimsPage({ api, token, isAdmin, canCreate }: { api: Api; token: string; isAdmin: boolean; canCreate: boolean }) {
@@ -620,9 +652,13 @@ function AuditPage({ api, token }: { api: Api; token: string }) {
 }
 
 function AdminPage({ api }: { api: Api }) {
-  const resource = useResource(api, "/organizations"); const [error, setError] = useState("");
-  async function update(row: Row, status: string) { try { await api(`/organizations/${row._id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await resource.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Update failed"); } }
-  return <>{error && <div className="error">{error}</div>}<PageState busy={resource.busy} error={resource.error} /><DataTable columns={["code", "name", "organizationType", "district", "status", "createdAt"]} rows={resource.rows} action={(row) => <select value={row.status ?? "PENDING"} onChange={(event) => void update(row, event.target.value)}><option>PENDING</option><option>APPROVED</option><option>SUSPENDED</option><option>DEACTIVATED</option></select>} /></>;
+  const [organizations, setOrganizations] = useState<Row[]>([]); const [summary, setSummary] = useState<Row>({}); const [resourceType, setResourceType] = useState("staff"); const resources = useResource(api, `/organizations/admin/resources/${resourceType}`); const [error, setError] = useState(""); const [busy, setBusy] = useState(true);
+  const loadOverview = useCallback(async () => { setBusy(true); try { const result = await api("/organizations/admin/overview"); setOrganizations(result.data ?? []); setSummary(result.summary ?? {}); } catch (reason) { setError(reason instanceof Error ? reason.message : "Admin overview failed"); } finally { setBusy(false); } }, [api]);
+  useEffect(() => { void loadOverview(); }, [loadOverview]);
+  async function update(row: Row, status: string) { try { await api(`/organizations/${row._id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await loadOverview(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Update failed"); } }
+  async function updateStaff(row: Row, status: string) { try { await api(`/organizations/admin/staff/${row._id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await resources.load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Staff update failed"); } }
+  const columns: Record<string, string[]> = { staff: ["hospital", "fullName", "email", "employeeNo", "roles", "status", "createdAt"], documents: ["hospital", "name", "category", "mimeType", "size", "createdAt"], appointments: ["hospital", "subject", "startsAt", "durationMinutes", "status"], invoices: ["hospital", "invoiceNo", "patientName", "status", "totalAmount", "dueAmount"], reports: ["hospital", "title", "reportType", "periodStart", "periodEnd"], contracts: ["hospital", "title", "version", "status", "signerName"] };
+  return <>{error && <div className="error">{error}</div>}<PageState busy={busy} error="" /><section className="metrics admin-metrics"><Metric label="Organizations" value={String(summary.organizations ?? 0)} detail={`${summary.pending ?? 0} awaiting review`} /><Metric label="Approved" value={String(summary.active ?? 0)} detail="Active organizations" /><Metric label="Platform staff" value={String(summary.staff ?? 0)} detail="Across all organizations" /><Metric label="Invoices" value={String(summary.invoices ?? 0)} detail="Across all organizations" /></section><h2>Organization management</h2><DataTable columns={["code", "name", "organizationType", "district", "status", "staffCount", "invoiceCount", "createdAt"]} rows={organizations.map((row) => ({ ...row, staffCount: row.counts?.staff ?? 0, invoiceCount: row.counts?.invoices ?? 0 }))} action={(row) => <select value={row.status ?? "PENDING"} onChange={(event) => void update(row, event.target.value)}><option>PENDING</option><option>APPROVED</option><option>SUSPENDED</option><option>DEACTIVATED</option></select>} /><section className="panel-card"><div className="section-heading"><div><h2>Platform resources</h2><p>Inspect operational records from every organization in one console.</p></div><select aria-label="Platform resource" value={resourceType} onChange={(event) => setResourceType(event.target.value)}><option value="staff">Staff accounts</option><option value="documents">Documents</option><option value="appointments">Appointments</option><option value="invoices">Invoices</option><option value="reports">Reports</option><option value="contracts">Contracts</option></select></div><PageState busy={resources.busy} error={resources.error} /><DataTable columns={columns[resourceType] ?? []} rows={resources.rows} action={resourceType === "staff" ? (row) => <select value={row.status} onChange={(event) => void updateStaff(row, event.target.value)}><option>ACTIVE</option><option>SUSPENDED</option><option>DISABLED</option></select> : undefined} /></section></>;
 }
 
 function displayValue(key: string, value: any) {

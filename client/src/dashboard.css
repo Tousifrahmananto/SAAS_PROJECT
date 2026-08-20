@@ -157,6 +157,29 @@ td .primary, .resource-card .primary { border-color: #1769db; background: #1769d
 .row-actions, .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
 .toolbar { justify-content: flex-end; margin: 20px 0; }
 .button-link { border: 1px solid #cbd5e1; border-radius: 7px; padding: 8px 12px; background: #fff; color: #21324a; font-weight: 700; }
+.filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin: 22px 0; padding: 16px 18px; border: 1px solid #d7deea; border-radius: 12px; background: #fff; }
+.filter-bar label { display: grid; gap: 6px; color: #526071; font-size: .78rem; font-weight: 800; }
+.filter-bar input, .filter-bar select, .section-heading select, .signature-panel input { border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 11px; background: #fff; color: #172033; font: inherit; }
+.filter-bar > span { color: #667085; font-size: .85rem; }
+.bar-chart { display: flex; min-height: 215px; align-items: end; gap: 20px; overflow-x: auto; padding: 20px 12px 10px; border-bottom: 1px solid #d7deea; }
+.bar-group { min-width: 82px; display: grid; justify-items: center; gap: 5px; color: #526071; font-size: .75rem; }
+.bar-values { height: 155px; display: flex; align-items: end; gap: 5px; }
+.bar { display: block; width: 25px; min-height: 4px; border-radius: 5px 5px 0 0; transition: height .2s ease; }
+.billed-bar { background: #1769db; }
+.collected-bar { background: #16a36a; }
+.appointment-calendar { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.appointment-calendar article { padding: 15px; border: 1px solid #d7deea; border-radius: 10px; background: #f8fafc; }
+.appointment-calendar h3 { margin: 0 0 10px; }
+.calendar-event { display: grid; grid-template-columns: auto 1fr; gap: 4px 9px; padding: 9px 0; border-top: 1px solid #e4e9f1; }
+.calendar-event small { grid-column: 2; color: #667085; }
+.signature-panel { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid #b8c7db; border-radius: 10px; background: #f8fbff; }
+.signature-panel label { display: grid; gap: 6px; font-weight: 700; }
+.signature-panel canvas { width: 100%; height: 180px; border: 1px dashed #718096; border-radius: 8px; background: #fff; touch-action: none; }
+.danger-button { color: #b42318 !important; border-color: #f5b7b1 !important; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; }
+.section-heading h2 { margin-bottom: 5px; }
+.section-heading p { margin: 0; color: #667085; }
+button:disabled { opacity: .55; cursor: not-allowed; }
 
 @media (max-width: 1100px) {
   .portal-shell { grid-template-columns: 205px 1fr; }

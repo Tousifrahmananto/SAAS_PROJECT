@@ -25,7 +25,9 @@ const appointmentSchema = new Schema({
   startsAt: { type: Date, required: true, index: true },
   durationMinutes: { type: Number, min: 15, max: 480, default: 30 },
   status: { type: String, enum: ["REQUESTED", "APPROVED", "REJECTED", "CANCELLED", "COMPLETED"], default: "REQUESTED", index: true },
-  decisionNote: { type: String, default: "" }
+  decisionNote: { type: String, default: "" },
+  reminderSentAt: { type: Date, default: null },
+  reminderStatus: { type: String, enum: ["NOT_SENT", "SENT", "FAILED"], default: "NOT_SENT" }
 }, { timestamps: true });
 appointmentSchema.index({ hospital: 1, startsAt: 1 });
 export const Appointment = model("Appointment", appointmentSchema);
@@ -65,6 +67,7 @@ const contractSchema = new Schema({
   version: { type: Number, default: 1, min: 1 },
   status: { type: String, enum: ["DRAFT", "PENDING", "ACCEPTED", "REJECTED"], default: "PENDING", index: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  document: { type: Schema.Types.ObjectId, ref: "DocumentAsset", default: null },
   signedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   signerName: { type: String, default: "" },
   signatureDataUrl: { type: String, default: "", select: false },
